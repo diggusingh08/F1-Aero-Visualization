@@ -1,2 +1,12 @@
 ﻿  main.cpp
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': macro redefinition
+  (compiling source file 'main.cpp')
+      C:\Users\hp\vcpkg\installed\x64-windows\include\glad\glad.h(32,9):
+      see previous definition of 'APIENTRY'
+  
+  Mesh.cpp
+C:\Users\hp\Desktop\C assgn\ComputerGraphicsProject\F1_Project_lib\F1_Project_lib\Mesh.cpp(36,46): warning C4267: 'argument': conversion from 'size_t' to 'GLsizei', possible loss of data
+  Model.cpp
+  Shader.cpp
+  Generating Code...
 LINK : fatal error LNK1104: cannot open file 'msvcprtd.lib'

@@ -38,6 +38,12 @@
     <None Include="fragment.glsl">
       <Filter>shaders</Filter>
     </None>
+    <None Include="particle_vertex.glsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="particle_fragment.glsl">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Shader.h">
@@ -47,6 +53,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Model.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FlowVisualization.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
