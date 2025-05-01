@@ -1,4 +1,4 @@
-﻿// Modified main.cpp with debugging changes
+﻿// Modified main.cpp with scaling and positioning improvements
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -15,8 +15,8 @@
 #include <direct.h>
 #include <windows.h>
 
-// Camera variables
-glm::vec3 cameraPos = glm::vec3(0.0f, 2.0f, 10.0f);  // Modified for better initial view
+// Camera variables - adjusted for better default view
+glm::vec3 cameraPos = glm::vec3(0.0f, 1.0f, 5.0f);  // Moved closer and lowered
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
@@ -34,7 +34,7 @@ float lastFrame = 0.0f;
 
 // Controls
 bool showFlow = true;
-bool showCar = true;  // New toggle for car visibility
+bool showCar = true;  // Toggle for car visibility
 
 // Function declarations
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -88,14 +88,15 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_F && action == GLFW_PRESS) {
         showFlow = !showFlow;  // Toggle flow visualization
+        std::cout << "Flow visualization: " << (showFlow ? "ON" : "OFF") << std::endl;
     }
     if (key == GLFW_KEY_C && action == GLFW_PRESS) {
         showCar = !showCar;    // Toggle car visibility
         std::cout << "Car visibility: " << (showCar ? "ON" : "OFF") << std::endl;
     }
     if (key == GLFW_KEY_R && action == GLFW_PRESS) {
-        // Reset camera position
-        cameraPos = glm::vec3(0.0f, 2.0f, 10.0f);
+        // Reset camera position to new improved default
+        cameraPos = glm::vec3(0.0f, 1.0f, 5.0f);
         yaw = -90.0f;
         pitch = 0.0f;
         cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
@@ -108,7 +109,8 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    float cameraSpeed = 2.5f * deltaTime;
+    // Increased camera speed for better navigation
+    float cameraSpeed = 5.0f * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         cameraPos += cameraSpeed * cameraFront;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -150,8 +152,8 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // 3. Create Window
-    GLFWwindow* window = glfwCreateWindow(800, 600, "F1 Car Aero Visualization", NULL, NULL);
+    // 3. Create Window - increased window size for better viewing
+    GLFWwindow* window = glfwCreateWindow(1200, 800, "F1 Car Aero Visualization", NULL, NULL);
     if (!window) {
         std::cerr << "Failed to create GLFW window\n";
         glfwTerminate();
@@ -195,12 +197,14 @@ int main() {
         Model ourModel(modelPath);
         std::cout << "Model loaded successfully!" << std::endl;
 
-        // 8. Create flow visualization
-        float carLength = 5.7f;
-        float carWidth = 2.0f;
-        float carHeight = 1.0f;
-        FlowVisualization flowVis(5000, carLength, carWidth, carHeight);
-        std::cout << "Flow visualization initialized!" << std::endl;
+        // 8. Create flow visualization with adjusted parameters for visibility
+        // Increased car dimensions to match the new scale
+        float carLength = 5.7f;  // Keep this consistent with original
+        float carWidth = 2.0f;   // Keep width
+        float carHeight = 1.0f;  // Keep height
+        int numParticles = 10000; // Increased number of particles for better visualization
+        FlowVisualization flowVis(numParticles, carLength, carWidth, carHeight);
+        std::cout << "Flow visualization initialized with " << numParticles << " particles!" << std::endl;
 
         // 9. OpenGL settings
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
@@ -220,18 +224,18 @@ int main() {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             // Setup view/projection transformations
-            glm::mat4 projection = glm::perspective(glm::radians(fov), 800.0f / 600.0f, 0.1f, 100.0f);
+            glm::mat4 projection = glm::perspective(glm::radians(fov), 1200.0f / 800.0f, 0.1f, 100.0f);
             glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
             // Draw car model if visibility is enabled
             if (showCar) {
                 ourShader.use();
 
-                // Setup lighting parameters (missing in original code)
+                // Setup lighting parameters
                 ourShader.setVec3("lightPos", glm::vec3(5.0f, 5.0f, 5.0f));
                 ourShader.setVec3("viewPos", cameraPos);
                 ourShader.setVec3("lightColor", glm::vec3(1.0f, 1.0f, 1.0f));
-                ourShader.setVec3("objectColor", glm::vec3(0.8f, 0.8f, 0.8f)); // Light gray
+                ourShader.setVec3("objectColor", glm::vec3(0.8f, 0.1f, 0.1f)); // Red tint for F1 car
 
                 ourShader.setMat4("projection", projection);
                 ourShader.setMat4("view", view);
@@ -243,16 +247,17 @@ int main() {
                 model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
                 model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate to face camera
 
-                // Adjust scale - try different values if car is too small/large
-                float scale = 0.1f; // Increase this value if car is too small
+                // Significantly increased scale for better visibility
+                float scale = 1.0f; // Changed from 0.1f to 1.0f - 10x larger
                 model = glm::scale(model, glm::vec3(scale));
 
                 ourShader.setMat4("model", model);
 
-                // Debugging: print matrix info
-                if (currentFrame - lastFrame < 0.1) { // Print only occasionally
-                    std::cout << "Drawing car with model matrix: "
-                        << model[3][0] << ", " << model[3][1] << ", " << model[3][2] << std::endl;
+                // Debugging: print matrix info only occasionally
+                static float lastPrintTime = 0.0f;
+                if (currentFrame - lastPrintTime > 5.0f) { // Print every 5 seconds
+                    std::cout << "Drawing car with model scale: " << scale << std::endl;
+                    lastPrintTime = currentFrame;
                 }
 
                 ourModel.Draw(ourShader);

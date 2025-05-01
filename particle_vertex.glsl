@@ -12,7 +12,14 @@ out vec3 Color;
 void main()
 {
     gl_Position = projection * view * model * vec4(aPos, 1.0);
-    gl_PointSize = 3.0;  // Base point size
+    
+    // Calculate distance from camera (in view space)
+    vec4 viewPos = view * model * vec4(aPos, 1.0);
+    float distance = length(viewPos.xyz);
+    
+    // Size particles based on distance (closer particles are larger)
+    // and consistent with the new car scale
+    gl_PointSize = max(8.0 * (1.0 / (distance * 0.1 + 0.1)), 2.0);
     
     // Pass color to fragment shader
     Color = particleColor;

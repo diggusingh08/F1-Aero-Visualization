@@ -26,6 +26,9 @@ public:
     }
 
     // Initialize the flow system
+// Updated init function for FlowVisualization class
+// Replace this in FlowVisualization.h
+
     void init(int numParticles, float carLength, float carWidth, float carHeight) {
         // Store car dimensions for flow calculations
         this->carLength = carLength;
@@ -38,11 +41,16 @@ public:
         // Random number generation
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_real_distribution<float> xDist(-carLength, carLength * 2);
-        std::uniform_real_distribution<float> yDist(0.0f, carHeight * 1.5f);
-        std::uniform_real_distribution<float> zDist(-carWidth, carWidth);
-        std::uniform_real_distribution<float> lifeDist(0.5f, 2.0f);
-        std::uniform_real_distribution<float> sizeDist(0.01f, 0.03f);
+
+        // Adjusted distributions to match the car's new scale
+        // Wider and longer distributions to better visualize around the car
+        std::uniform_real_distribution<float> xDist(-carLength * 2.0f, carLength * 3.0f);
+        std::uniform_real_distribution<float> yDist(0.0f, carHeight * 2.5f);
+        std::uniform_real_distribution<float> zDist(-carWidth * 1.5f, carWidth * 1.5f);
+
+        // Longer life and larger sizes for better visibility
+        std::uniform_real_distribution<float> lifeDist(1.0f, 4.0f);
+        std::uniform_real_distribution<float> sizeDist(0.03f, 0.08f);
 
         // Initialize particles with random positions
         for (auto& particle : particles) {
