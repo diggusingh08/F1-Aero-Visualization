@@ -1,4 +1,6 @@
-﻿#include <glad/glad.h>
+﻿// Modified main.cpp with debugging changes
+
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -6,15 +8,15 @@
 
 #include "Shader.h"
 #include "Model.h"
-#include "FlowVisualization.h" // Include our new flow visualization header
+#include "FlowVisualization.h"
 
 #include <iostream>
-#include <cstdlib>   // For getenv()
-#include <direct.h>  // For _getcwd
-#include <windows.h> // For Windows-specific path functions
+#include <cstdlib>
+#include <direct.h>
+#include <windows.h>
 
 // Camera variables
-glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 5.0f);
+glm::vec3 cameraPos = glm::vec3(0.0f, 2.0f, 10.0f);  // Modified for better initial view
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
@@ -31,11 +33,16 @@ float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
 // Controls
-bool showFlow = true;  // Toggle flow visualization
+bool showFlow = true;
+bool showCar = true;  // New toggle for car visibility
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
-    glViewport(0, 0, width, height);
-}
+// Function declarations
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void mouse_callback(GLFWwindow* window, double xposIn, double yposIn);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void processInput(GLFWwindow* window);
+void printCurrentDirectory();
 
 // Mouse callback function
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
@@ -49,22 +56,19 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     }
 
     float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // Reversed since y-coordinates go from bottom to top
+    float yoffset = lastY - ypos;
     lastX = xpos;
     lastY = ypos;
 
-    float sensitivity = 0.1f; // Change this value for mouse sensitivity
+    float sensitivity = 0.1f;
     xoffset *= sensitivity;
     yoffset *= sensitivity;
 
     yaw += xoffset;
     pitch += yoffset;
 
-    // Make sure that when pitch is out of bounds, screen doesn't get flipped
-    if (pitch > 89.0f)
-        pitch = 89.0f;
-    if (pitch < -89.0f)
-        pitch = -89.0f;
+    if (pitch > 89.0f) pitch = 89.0f;
+    if (pitch < -89.0f) pitch = -89.0f;
 
     glm::vec3 front;
     front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
@@ -76,16 +80,26 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
 // Scroll callback function for zoom
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
     fov -= (float)yoffset;
-    if (fov < 1.0f)
-        fov = 1.0f;
-    if (fov > 45.0f)
-        fov = 45.0f;
+    if (fov < 1.0f) fov = 1.0f;
+    if (fov > 45.0f) fov = 45.0f;
 }
 
 // Key callback for special actions
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_F && action == GLFW_PRESS) {
         showFlow = !showFlow;  // Toggle flow visualization
+    }
+    if (key == GLFW_KEY_C && action == GLFW_PRESS) {
+        showCar = !showCar;    // Toggle car visibility
+        std::cout << "Car visibility: " << (showCar ? "ON" : "OFF") << std::endl;
+    }
+    if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+        // Reset camera position
+        cameraPos = glm::vec3(0.0f, 2.0f, 10.0f);
+        yaw = -90.0f;
+        pitch = 0.0f;
+        cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+        std::cout << "Camera reset" << std::endl;
     }
 }
 
@@ -110,6 +124,10 @@ void processInput(GLFWwindow* window) {
 }
 
 // Utility: Get current directory (Windows-compatible)
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    glViewport(0, 0, width, height);
+}
+
 void printCurrentDirectory() {
     char buffer[FILENAME_MAX];
     if (_getcwd(buffer, FILENAME_MAX)) {
@@ -160,11 +178,16 @@ int main() {
 
     // 6. Load shaders
     try {
+        // Print shader loading attempt
+        std::cout << "Loading shaders..." << std::endl;
+
         // Main model shader
         Shader ourShader("vertex.glsl", "fragment.glsl");
+        std::cout << "Car shader loaded successfully!" << std::endl;
 
         // Particle shader for flow visualization
         Shader particleShader("particle_vertex.glsl", "particle_fragment.glsl");
+        std::cout << "Particle shader loaded successfully!" << std::endl;
 
         // 7. Load model
         std::string modelPath = "C:/Users/hp/Desktop/C assgn/ComputerGraphicsProject/F1_Project_lib/F1_Project_lib/x64/Release/mcl35m_2.obj";
@@ -172,15 +195,15 @@ int main() {
         Model ourModel(modelPath);
         std::cout << "Model loaded successfully!" << std::endl;
 
-        // 8. Create flow visualization (with approximate F1 car dimensions)
-        float carLength = 5.7f;  // Approx F1 car length in meters
-        float carWidth = 2.0f;   // Approx F1 car width in meters
-        float carHeight = 1.0f;  // Approx F1 car height in meters
+        // 8. Create flow visualization
+        float carLength = 5.7f;
+        float carWidth = 2.0f;
+        float carHeight = 1.0f;
         FlowVisualization flowVis(5000, carLength, carWidth, carHeight);
         std::cout << "Flow visualization initialized!" << std::endl;
 
         // 9. OpenGL settings
-        glClearColor(0.05f, 0.05f, 0.05f, 1.0f);  // Dark background for better visualization
+        glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
         glEnable(GL_DEPTH_TEST);
 
         // 10. Main loop
@@ -200,17 +223,40 @@ int main() {
             glm::mat4 projection = glm::perspective(glm::radians(fov), 800.0f / 600.0f, 0.1f, 100.0f);
             glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
-            // Draw car model
-            ourShader.use();
-            ourShader.setMat4("projection", projection);
-            ourShader.setMat4("view", view);
+            // Draw car model if visibility is enabled
+            if (showCar) {
+                ourShader.use();
 
-            glm::mat4 model = glm::mat4(1.0f);
-            model = glm::rotate(model, glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-            model = glm::scale(model, glm::vec3(0.1f)); // Scale down the car model if needed
-            ourShader.setMat4("model", model);
+                // Setup lighting parameters (missing in original code)
+                ourShader.setVec3("lightPos", glm::vec3(5.0f, 5.0f, 5.0f));
+                ourShader.setVec3("viewPos", cameraPos);
+                ourShader.setVec3("lightColor", glm::vec3(1.0f, 1.0f, 1.0f));
+                ourShader.setVec3("objectColor", glm::vec3(0.8f, 0.8f, 0.8f)); // Light gray
 
-            ourModel.Draw(ourShader);
+                ourShader.setMat4("projection", projection);
+                ourShader.setMat4("view", view);
+
+                // Create model matrix with proper positioning and scale
+                glm::mat4 model = glm::mat4(1.0f);
+
+                // Position the car at the origin with correct orientation
+                model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+                model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate to face camera
+
+                // Adjust scale - try different values if car is too small/large
+                float scale = 0.1f; // Increase this value if car is too small
+                model = glm::scale(model, glm::vec3(scale));
+
+                ourShader.setMat4("model", model);
+
+                // Debugging: print matrix info
+                if (currentFrame - lastFrame < 0.1) { // Print only occasionally
+                    std::cout << "Drawing car with model matrix: "
+                        << model[3][0] << ", " << model[3][1] << ", " << model[3][2] << std::endl;
+                }
+
+                ourModel.Draw(ourShader);
+            }
 
             // Update and draw flow visualization if enabled
             if (showFlow) {
