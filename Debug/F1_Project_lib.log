@@ -1,0 +1,2 @@
+﻿C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(755,5): error : Element <LanguageStandard> has an invalid value of "Default (ISO C++17 Standard)".
+C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(755,5): error MSB6011: Invalid parameters passed to the Microsoft.Build.CPPTasks.CL task.
