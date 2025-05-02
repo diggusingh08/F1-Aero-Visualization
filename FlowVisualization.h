@@ -35,7 +35,7 @@ public:
         this->carHeight = carHeight;
 
         // Define DRS position for pressure change detection
-        drsPositionX = carLength * 0.4f;  // Position of rear wing/DRS
+        drsPositionZ = carLength * 0.4f;  // Position of rear wing/DRS (now on Z-axis)
 
         // Initialize the particles
         particles.resize(numParticles);
@@ -46,9 +46,11 @@ public:
 
         // Adjusted distributions focusing on the front of the car
         // Most particles start in front of the car now
-        std::uniform_real_distribution<float> xDist(-carLength * 2.5f, -carLength * 0.5f);
-        std::uniform_real_distribution<float> yDist(0.0f, carHeight * 2.0f);
-        std::uniform_real_distribution<float> zDist(-carWidth * 1.5f, carWidth * 1.5f);
+// Adjusted distributions for side view of the car
+        // Most particles start to the side of the car now
+        std::uniform_real_distribution<float> zDist(-carLength * 2.5f, -carLength * 0.5f); // Now Z is the front-back axis
+        std::uniform_real_distribution<float> yDist(0.0f, carHeight * 2.0f);  // Y still up
+        std::uniform_real_distribution<float> xDist(-carWidth * 1.5f, carWidth * 1.5f);  // X is now the side axis
 
         // Longer life for better flow visualization
         std::uniform_real_distribution<float> lifeDist(2.0f, 6.0f);
@@ -79,23 +81,24 @@ public:
         }
         else {
             // Reset to a specific starting position
-            // Distribute along the front of the car for better visualization
-            float frontOffset = carLength * 0.8f;
+                        // Distribute along the side of the car for better visualization
+            float sideOffset = carWidth * 0.8f;
             float heightVariation = carHeight * 1.0f;
-            float widthVariation = carWidth * 0.8f;
+            float lengthVariation = carLength * 0.8f;
 
             particle.position = glm::vec3(
-                -frontOffset - (rand() % 100) / 200.0f,  // Slightly randomize X position
+                -sideOffset - (rand() % 100) / 200.0f,  // Slightly randomize X position (now side of car)
                 (rand() % 100) / 100.0f * heightVariation,  // Vary height
-                ((rand() % 200) - 100) / 100.0f * widthVariation  // Vary width
+                ((rand() % 200) - 100) / 100.0f * lengthVariation  // Vary position along length (Z-axis now)
             );
         }
 
-        // Initial velocity (directional flow from front to back of car)
+
+// Initial velocity (directional flow from side of car)
         // Higher initial speed for better visualization
-        particle.velocity = glm::vec3(1.5f + (randomFloat(gen) * 0.5f),
-            randomFloat(gen) * 0.2f,
-            randomFloat(gen) * 0.2f);
+        particle.velocity = glm::vec3(1.5f + (randomFloat(gen) * 0.5f),  // Now moving along X-axis (side to side)
+            randomFloat(gen) * 0.2f,                                    // Small vertical variation
+            randomFloat(gen) * 0.2f);                                   // Small variation along Z-axis
 
         // Starting color - blue to indicate cool, low pressure areas
         particle.color = glm::vec3(0.1f, 0.4f, 0.9f);
@@ -175,7 +178,7 @@ public:
                 applyAerodynamicForces(particle, deltaTime);
 
                 // Check if particle has passed the DRS/rear wing
-                if (!particle.passedDRS && particle.position.x > drsPositionX) {
+                if (!particle.passedDRS && particle.position.z > drsPositionZ) {
                     particle.passedDRS = true;
                 }
 
@@ -280,58 +283,58 @@ public:
     // Apply forces from car body
     void applyCarBodyForces(FlowParticle& particle) {
         // Simplified car body as a box
-        float carX = 0.0f; // Car centered at origin
+        float carZ = 0.0f; // Car centered at origin
 
-        // Check if particle is near the car body
-        if (particle.position.x > carX - carLength * 0.5f &&
-            particle.position.x < carX + carLength * 0.5f &&
+        // Check if particle is near the car body (with updated orientation)
+        if (particle.position.z > carZ - carLength * 0.5f &&
+            particle.position.z < carZ + carLength * 0.5f &&
             particle.position.y < carHeight &&
-            std::abs(particle.position.z) < carWidth * 0.5f) {
+            std::abs(particle.position.x) < carWidth * 0.5f) {
 
             // Compute distance to car surface (simplified)
             float distToSurface = 0.1f;
 
             // Direction away from car body (improved for better flow visualization)
+// Direction away from car body (improved for better flow visualization)
             glm::vec3 awayFromCar;
 
             // Top surface - upward flow
             if (particle.position.y > carHeight * 0.8f) {
-                awayFromCar = glm::normalize(glm::vec3(0.5f, 1.0f, particle.position.z * 0.2f));
+                awayFromCar = glm::normalize(glm::vec3(0.5f, 1.0f, particle.position.x * 0.2f));
             }
             // Bottom surface - downward flow with ground effect
             else if (particle.position.y < carHeight * 0.3f) {
-                awayFromCar = glm::normalize(glm::vec3(1.0f, -0.2f, particle.position.z * 0.1f));
+                awayFromCar = glm::normalize(glm::vec3(1.0f, -0.2f, particle.position.x * 0.1f));
             }
             // Side surfaces - outward flow
-            else if (std::abs(particle.position.z) > carWidth * 0.4f) {
-                float sideDir = particle.position.z > 0 ? 1.0f : -1.0f;
-                awayFromCar = glm::normalize(glm::vec3(0.5f, 0.1f, sideDir));
+            else if (std::abs(particle.position.x) > carWidth * 0.4f) {
+                float sideDir = particle.position.x > 0 ? 1.0f : -1.0f;
+                awayFromCar = glm::normalize(glm::vec3(sideDir, 0.1f, 0.5f));
             }
             // Front of car - flows around
-            else if (particle.position.x < -carLength * 0.3f) {
+            else if (particle.position.z < -carLength * 0.3f) {
                 awayFromCar = glm::normalize(glm::vec3(
-                    0.2f,
+                    particle.position.x * 0.7f,
                     particle.position.y < carHeight * 0.5f ? -0.3f : 0.3f,
-                    particle.position.z * 0.7f
+                    0.2f
                 ));
             }
             // Rear of car - flows behind
-            else if (particle.position.x > carLength * 0.3f) {
+            else if (particle.position.z > carLength * 0.3f) {
                 awayFromCar = glm::normalize(glm::vec3(
-                    1.0f,
+                    particle.position.x * 0.3f,
                     particle.position.y < carHeight * 0.5f ? -0.2f : 0.2f,
-                    particle.position.z * 0.3f
+                    1.0f
                 ));
             }
             // Middle of car
             else {
                 awayFromCar = glm::normalize(glm::vec3(
-                    0.7f,
+                    particle.position.x,
                     particle.position.y < carHeight * 0.5f ? -0.3f : 0.3f,
-                    particle.position.z
+                    0.7f
                 ));
             }
-
             // Apply force away from car with strength decreasing with distance
             float forceMagnitude = 1.0f / (distToSurface + 0.1f);
             particle.velocity += awayFromCar * forceMagnitude * 0.02f;
@@ -346,39 +349,39 @@ public:
 
     // Apply forces from rear wing (DRS area)
     void applyRearWingForces(FlowParticle& particle) {
-        // Rear wing position
-        float rearWingX = carLength * 0.4f;
+        // Rear wing position (updated for new orientation)
+        float rearWingZ = carLength * 0.4f;  // Now Z represents the length axis
         float rearWingY = carHeight * 0.8f;
-        float rearWingZ = 0.0f;
+        float rearWingX = 0.0f;
         float rearWingWidth = carWidth * 0.8f;
         float rearWingHeight = carHeight * 0.2f;
 
-        // Check if particle is near the rear wing
-        if (particle.position.x > rearWingX - carLength * 0.1f &&
-            particle.position.x < rearWingX + carLength * 0.2f &&
+        // Check if particle is near the rear wing (updated for new orientation)
+        if (particle.position.z > rearWingZ - carLength * 0.1f &&
+            particle.position.z < rearWingZ + carLength * 0.2f &&
             particle.position.y > rearWingY - rearWingHeight &&
             particle.position.y < rearWingY + rearWingHeight &&
-            std::abs(particle.position.z) < rearWingWidth * 0.5f) {
+            std::abs(particle.position.x) < rearWingWidth * 0.5f) {
 
             // Downward force (rear wing generates downforce)
             float forceMagnitude = 0.08f;
             particle.velocity.y -= forceMagnitude;
 
             // Accelerate flow over wing
-            particle.velocity.x += 0.05f;
+            particle.velocity.z += 0.05f;  // Now Z is the flow direction
 
             // Create wing-tip vortices at the edges
-            if (std::abs(particle.position.z) > rearWingWidth * 0.4f) {
-                float vortexDir = particle.position.z > 0 ? 1.0f : -1.0f;
-                particle.velocity.z -= vortexDir * 0.03f;
+            if (std::abs(particle.position.x) > rearWingWidth * 0.4f) {
+                float vortexDir = particle.position.x > 0 ? 1.0f : -1.0f;
+                particle.velocity.x -= vortexDir * 0.03f;
                 particle.velocity.y += 0.02f;
             }
 
             // Create turbulence behind the wing
-            if (particle.position.x > rearWingX) {
+            if (particle.position.z > rearWingZ) {
                 // More chaotic movement behind the wing
                 particle.velocity.y += (rand() % 100) / 500.0f - 0.1f;
-                particle.velocity.z += (rand() % 100) / 500.0f - 0.1f;
+                particle.velocity.x += (rand() % 100) / 500.0f - 0.1f;
             }
         }
     }
@@ -390,65 +393,73 @@ public:
         float frontWingY = carHeight * 0.2f;
         float frontWingWidth = carWidth * 0.9f;
 
-        // Check if particle is near the front wing
-        if (particle.position.x > frontWingX - carLength * 0.1f &&
-            particle.position.x < frontWingX + carLength * 0.1f &&
-            particle.position.y < frontWingY + carHeight * 0.1f &&
-            std::abs(particle.position.z) < frontWingWidth * 0.5f) {
+        // Apply forces from front wing
+        void applyFrontWingForces(FlowParticle & particle) {
+            // Front wing position (updated for new orientation)
+            float frontWingZ = -carLength * 0.4f;  // Now Z is the length axis
+            float frontWingY = carHeight * 0.2f;
+            float frontWingWidth = carWidth * 0.9f;
 
-            // Downforce
-            float forceMagnitude = 0.04f;
-            particle.velocity.y -= forceMagnitude;
+            // Check if particle is near the front wing (updated for new orientation)
+            if (particle.position.z > frontWingZ - carLength * 0.1f &&
+                particle.position.z < frontWingZ + carLength * 0.1f &&
+                particle.position.y < frontWingY + carHeight * 0.1f &&
+                std::abs(particle.position.x) < frontWingWidth * 0.5f) {
 
-            // Accelerate flow under the wing
-            particle.velocity.x += 0.03f;
+                // Downforce
+                float forceMagnitude = 0.04f;
+                particle.velocity.y -= forceMagnitude;
 
-            // Create wing-tip vortices
-            if (std::abs(particle.position.z) > frontWingWidth * 0.4f) {
-                float vortexDir = particle.position.z > 0 ? 1.0f : -1.0f;
-                particle.velocity.z -= vortexDir * 0.04f;
-                particle.velocity.y += 0.02f;
+                // Accelerate flow under the wing
+                particle.velocity.z += 0.03f;  // Now Z is the flow direction
 
-                // Color change for vortices
-                particle.color = glm::vec3(0.3f, 0.5f, 0.9f);
+                // Create wing-tip vortices
+                if (std::abs(particle.position.x) > frontWingWidth * 0.4f) {
+                    float vortexDir = particle.position.x > 0 ? 1.0f : -1.0f;
+                    particle.velocity.x -= vortexDir * 0.04f;
+                    particle.velocity.y += 0.02f;
+
+                    // Color change for vortices
+                    particle.color = glm::vec3(0.3f, 0.5f, 0.9f);
+                }
+
+                // Direct flow around the car
+                if (particle.position.y > frontWingY) {
+                    // Flow over the top of the wing
+                    particle.velocity.y += 0.02f;
+                }
             }
-
-            // Direct flow around the car
-            if (particle.position.y > frontWingY) {
-                // Flow over the top of the wing
-                particle.velocity.y += 0.02f;
-            }
-        }
     }
 
-    // Apply forces from floor and diffuser
-    void applyFloorForces(FlowParticle& particle) {
-        // Check if particle is under the car (ground effect area)
-        if (particle.position.y < carHeight * 0.3f &&
-            particle.position.y > 0.0f &&
-            particle.position.x > -carLength * 0.4f &&
-            particle.position.x < carLength * 0.3f &&
-            std::abs(particle.position.z) < carWidth * 0.4f) {
+        // Apply forces from floor and diffuser
+        void applyFloorForces(FlowParticle& particle) {
+            // Check if particle is under the car (ground effect area)
+            // Updated for new orientation - now Z is the length axis
+            if (particle.position.y < carHeight * 0.3f &&
+                particle.position.y > 0.0f &&
+                particle.position.z > -carLength * 0.4f &&
+                particle.position.z < carLength * 0.3f &&
+                std::abs(particle.position.x) < carWidth * 0.4f) {
 
-            // Venturi effect - accelerate air under the car
-            particle.velocity.x += 0.04f;
+                // Venturi effect - accelerate air under the car
+                particle.velocity.z += 0.04f;  // Now Z is the flow direction
 
-            // Ground effect pulls car down
-            particle.velocity.y -= 0.01f;
+                // Ground effect pulls car down
+                particle.velocity.y -= 0.01f;
 
-            // For diffuser at the rear, create expanding flow pattern
-            if (particle.position.x > 0.0f) {
-                // Diffuser expands the flow based on position
-                float diffuserStrength = 0.05f * (particle.position.x / carLength);
+                // For diffuser at the rear, create expanding flow pattern
+                if (particle.position.z > 0.0f) {
+                    // Diffuser expands the flow based on position
+                    float diffuserStrength = 0.05f * (particle.position.z / carLength);
 
-                // Upward component at diffuser exit
-                particle.velocity.y += diffuserStrength;
+                    // Upward component at diffuser exit
+                    particle.velocity.y += diffuserStrength;
 
-                // Outward component creating wider wake
-                float sideForce = diffuserStrength * 0.7f;
-                particle.velocity.z += (particle.position.z > 0) ? sideForce : -sideForce;
+                    // Outward component creating wider wake
+                    float sideForce = diffuserStrength * 0.7f;
+                    particle.velocity.x += (particle.position.x > 0) ? sideForce : -sideForce;
+                }
             }
-        }
     }
 
     // Draw the flow visualization
@@ -508,7 +519,7 @@ private:
     std::vector<FlowParticle> particles;
     unsigned int VAO, VBO;
     float carLength, carWidth, carHeight;
-    float drsPositionX;  // X position of DRS/rear wing for detection
+    float drsPositionZ;  // Z position of DRS/rear wing for detection (used to be X) 
 };
 
 #endif // FLOW_VISUALIZATION_H

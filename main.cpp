@@ -1,6 +1,4 @@
-﻿// Modified main.cpp with scaling and positioning improvements
-
-#include <glad/glad.h>
+﻿#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -244,9 +242,9 @@ int main() {
                 glm::mat4 model = glm::mat4(1.0f);
 
                 // Position the car at the origin with correct orientation
+// Position the car at the origin with new orientation
                 model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-                model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate to face camera
-
+                model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate to face sideways
                 // Significantly increased scale for better visibility
                 float scale = 1.0f; // Changed from 0.1f to 1.0f - 10x larger
                 model = glm::scale(model, glm::vec3(scale));
