@@ -12,8 +12,10 @@
 #include <cstdlib>
 #include <direct.h>
 #include <windows.h>
+#include <chrono>
+#include <thread>
 
-// Camera variables - adjusted for side view
+// Camera variables - adjusted for side view by default
 glm::vec3 cameraPos = glm::vec3(5.0f, 1.0f, 0.0f);
 glm::vec3 cameraFront = glm::vec3(-1.0f, 0.0f, 0.0f);
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -26,8 +28,6 @@ float lastX = 800.0f / 2.0f;
 float lastY = 600.0f / 2.0f;
 float fov = 45.0f;
 
-
-
 // Timing
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
@@ -35,6 +35,35 @@ float lastFrame = 0.0f;
 // Controls
 bool showFlow = true;
 bool showCar = true;
+bool usePressureMap = true;
+bool simulateDRS = false;
+int flowDensity = 400; // Number of flow lines
+
+// Simulation variables
+float carSpeed = 250.0f; // km/h - affects flow behavior
+float airDensity = 1.2f; // kg/m^3
+bool pauseSimulation = false;
+
+// Rendering variables
+int windowWidth = 1200;
+int windowHeight = 800;
+
+// Camera presets
+struct CameraPreset {
+    glm::vec3 position;
+    float presetYaw;
+    float presetPitch;
+    std::string name;
+};
+
+std::vector<CameraPreset> cameraPresets = {
+    {{0.0f, 1.5f, -8.0f}, 90.0f, 0.0f, "Front View"},
+    {{5.0f, 1.5f, 0.0f}, 180.0f, 0.0f, "Side View"},
+    {{0.0f, 5.0f, 0.0f}, -90.0f, -89.0f, "Top View"},
+    {{5.0f, 3.0f, 5.0f}, 225.0f, -30.0f, "3/4 View"}
+};
+
+int currentPreset = 0;
 
 // Function declarations
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -43,8 +72,8 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void processInput(GLFWwindow* window);
 void printCurrentDirectory();
-
-
+void setCurrentCameraPreset();
+void printSimulationInfo();
 
 // Mouse callback function
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
@@ -96,13 +125,72 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         showCar = !showCar;
         std::cout << "Car visibility: " << (showCar ? "ON" : "OFF") << std::endl;
     }
-    if (key == GLFW_KEY_R && action == GLFW_PRESS) {
-        cameraPos = glm::vec3(0.0f, 1.0f, 5.0f);
-        yaw = -90.0f;
-        pitch = 0.0f;
-        cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
-        std::cout << "Camera reset" << std::endl;
+    if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+        usePressureMap = !usePressureMap;
+        std::cout << "Pressure map: " << (usePressureMap ? "ON" : "OFF") << std::endl;
     }
+    if (key == GLFW_KEY_D && action == GLFW_PRESS) {
+        simulateDRS = !simulateDRS;
+        std::cout << "DRS simulation: " << (simulateDRS ? "OPEN" : "CLOSED") << std::endl;
+    }
+    if (key == GLFW_KEY_V && action == GLFW_PRESS) {
+        currentPreset = (currentPreset + 1) % cameraPresets.size();
+        setCurrentCameraPreset();
+    }
+    if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+        pauseSimulation = !pauseSimulation;
+        std::cout << "Simulation: " << (pauseSimulation ? "PAUSED" : "RUNNING") << std::endl;
+    }
+    if (key == GLFW_KEY_UP && action == GLFW_PRESS) {
+        carSpeed += 10.0f;
+        if (carSpeed > 350.0f) carSpeed = 350.0f;
+        std::cout << "Car speed: " << carSpeed << " km/h" << std::endl;
+    }
+    if (key == GLFW_KEY_DOWN && action == GLFW_PRESS) {
+        carSpeed -= 10.0f;
+        if (carSpeed < 0.0f) carSpeed = 0.0f;
+        std::cout << "Car speed: " << carSpeed << " km/h" << std::endl;
+    }
+    if (key == GLFW_KEY_KP_ADD && action == GLFW_PRESS) {
+        flowDensity += 50;
+        if (flowDensity > 1000) flowDensity = 1000;
+        std::cout << "Flow density: " << flowDensity << " lines" << std::endl;
+    }
+    if (key == GLFW_KEY_KP_SUBTRACT && action == GLFW_PRESS) {
+        flowDensity -= 50;
+        if (flowDensity < 100) flowDensity = 100;
+        std::cout << "Flow density: " << flowDensity << " lines" << std::endl;
+    }
+    if (key == GLFW_KEY_I && action == GLFW_PRESS) {
+        printSimulationInfo();
+    }
+}
+
+void setCurrentCameraPreset() {
+    cameraPos = cameraPresets[currentPreset].position;
+    yaw = cameraPresets[currentPreset].presetYaw;
+    pitch = cameraPresets[currentPreset].presetPitch;
+
+    glm::vec3 front;
+    front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    front.y = sin(glm::radians(pitch));
+    front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    cameraFront = glm::normalize(front);
+
+    std::cout << "Camera preset: " << cameraPresets[currentPreset].name << std::endl;
+}
+
+void printSimulationInfo() {
+    std::cout << "\n--- SIMULATION INFORMATION ---" << std::endl;
+    std::cout << "Car speed: " << carSpeed << " km/h" << std::endl;
+    std::cout << "Air density: " << airDensity << " kg/m³" << std::endl;
+    std::cout << "Flow visualization: " << (showFlow ? "ON" : "OFF") << std::endl;
+    std::cout << "Flow density: " << flowDensity << " lines" << std::endl;
+    std::cout << "Pressure mapping: " << (usePressureMap ? "ON" : "OFF") << std::endl;
+    std::cout << "DRS: " << (simulateDRS ? "OPEN" : "CLOSED") << std::endl;
+    std::cout << "Camera: " << cameraPresets[currentPreset].name << std::endl;
+    std::cout << "Simulation: " << (pauseSimulation ? "PAUSED" : "RUNNING") << std::endl;
+    std::cout << "-----------------------------\n" << std::endl;
 }
 
 // Process keyboard input for camera movement
@@ -128,6 +216,8 @@ void processInput(GLFWwindow* window) {
 // Utility: Get current directory (Windows-compatible)
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
+    windowWidth = width;
+    windowHeight = height;
 }
 
 void printCurrentDirectory() {
@@ -151,21 +241,18 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_SAMPLES, 4); // Enable MSAA
 
     // 3. Create Window
-    GLFWwindow* window = glfwCreateWindow(1200, 800, "F1 Car Aero Visualization", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "F1 Car Aero Visualization", NULL, NULL);
     if (!window) {
         std::cerr << "Failed to create GLFW window\n";
         glfwTerminate();
         return -1;
     }
 
-
-    // Update camera position for front view (in the main function):
-    cameraPos = glm::vec3(0.0f, 1.5f, -8.0f);  // Position in front of the car
-    yaw = -90.0f;  // Looking straight ahead
-    pitch = 0.0f;
-    cameraFront = glm::vec3(0.0f, 0.0f, 1.0f); // Looking toward the car
+    // Set initial camera position to first preset
+    setCurrentCameraPreset();
 
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
@@ -185,7 +272,25 @@ int main() {
     // 5. Print current working directory
     printCurrentDirectory();
 
-    // 6. Load shaders
+    // 6. Print simulation controls
+    std::cout << "\n--- F1 AERODYNAMICS VISUALIZATION ---" << std::endl;
+    std::cout << "Controls:" << std::endl;
+    std::cout << "  WASD/QE: Move camera" << std::endl;
+    std::cout << "  Mouse: Look around" << std::endl;
+    std::cout << "  Scroll: Zoom" << std::endl;
+    std::cout << "  F: Toggle flow visualization" << std::endl;
+    std::cout << "  C: Toggle car visibility" << std::endl;
+    std::cout << "  P: Toggle pressure/velocity map" << std::endl;
+    std::cout << "  D: Toggle DRS (open/closed)" << std::endl;
+    std::cout << "  V: Cycle camera views" << std::endl;
+    std::cout << "  SPACE: Pause/resume simulation" << std::endl;
+    std::cout << "  UP/DOWN: Increase/decrease car speed" << std::endl;
+    std::cout << "  +/-: Increase/decrease flow density" << std::endl;
+    std::cout << "  I: Show simulation information" << std::endl;
+    std::cout << "  ESC: Exit" << std::endl;
+    std::cout << "-------------------------------------\n" << std::endl;
+
+    // 7. Load shaders and model
     try {
         std::cout << "Loading shaders..." << std::endl;
 
@@ -197,42 +302,50 @@ int main() {
         Shader lineShader("line_vertex.glsl", "line_fragment.glsl");
         std::cout << "Line shader loaded successfully!" << std::endl;
 
-        // 7. Load model
+        // 8. Load model
         std::string modelPath = "C:/Users/hp/Desktop/C assgn/ComputerGraphicsProject/F1_Project_lib/F1_Project_lib/x64/Release/mcl35m_2.obj";
         std::cout << "Loading model from: " << modelPath << std::endl;
         Model ourModel(modelPath);
         std::cout << "Model loaded successfully!" << std::endl;
 
-        // 8. Create flow lines visualization
-// Update the flow lines visualization (in the main function):
+        // 9. Create flow lines visualization
         float carLength = 5.7f;
         float carWidth = 2.0f;
         float carHeight = 1.0f;
-        int numLines = 400; // Increased number of flow lines for better visualization
-        FlowLinesVisualization flowLinesVis(numLines, carLength, carWidth, carHeight);
-        std::cout << "Flow lines visualization initialized with " << numLines << " lines!" << std::endl;
+        FlowLinesVisualization flowLinesVis(flowDensity, carLength, carWidth, carHeight);
+        std::cout << "Flow lines visualization initialized with " << flowDensity << " lines!" << std::endl;
 
-        // 9. OpenGL settings
+        // 10. OpenGL settings
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glEnable(GL_LINE_SMOOTH);
         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+        glEnable(GL_MULTISAMPLE); // Enable MSAA
 
+        // Print initial simulation info
+        printSimulationInfo();
 
-
-        // 10. Main loop
+        // 11. Main loop
         while (!glfwWindowShouldClose(window)) {
             float currentFrame = glfwGetTime();
             deltaTime = currentFrame - lastFrame;
             lastFrame = currentFrame;
 
+            // Limit frame rate to avoid too fast simulation on powerful GPUs
+            if (deltaTime < 0.01f) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10 - static_cast<int>(deltaTime * 1000)));
+                currentFrame = glfwGetTime();
+                deltaTime = currentFrame - lastFrame;
+                lastFrame = currentFrame;
+            }
+
             processInput(window);
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            glm::mat4 projection = glm::perspective(glm::radians(fov), 1200.0f / 800.0f, 0.1f, 100.0f);
+            glm::mat4 projection = glm::perspective(glm::radians(fov), static_cast<float>(windowWidth) / windowHeight, 0.1f, 100.0f);
             glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
             if (showCar) {
@@ -241,14 +354,15 @@ int main() {
                 ourShader.setVec3("lightPos", glm::vec3(5.0f, 5.0f, 5.0f));
                 ourShader.setVec3("viewPos", cameraPos);
                 ourShader.setVec3("lightColor", glm::vec3(1.0f, 1.0f, 1.0f));
-                ourShader.setVec3("objectColor", glm::vec3(0.8f, 0.1f, 0.1f));
+
+                // Use McLaren orange color
+                ourShader.setVec3("objectColor", glm::vec3(1.0f, 0.35f, 0.0f));
 
                 ourShader.setMat4("projection", projection);
                 ourShader.setMat4("view", view);
 
-                // Update car position/rotation (in the rendering loop):
-                glm::mat4 model = glm::mat4(1.0f);
                 // Center the car properly
+                glm::mat4 model = glm::mat4(1.0f);
                 model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
                 // Rotate to face forward
                 model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -259,8 +373,12 @@ int main() {
                 ourModel.Draw(ourShader);
             }
 
-            if (showFlow) {
+            if (showFlow && !pauseSimulation) {
                 flowLinesVis.update(deltaTime);
+                flowLinesVis.draw(lineShader, view, projection);
+            }
+            else if (showFlow && pauseSimulation) {
+                // If paused, just draw without updating
                 flowLinesVis.draw(lineShader, view, projection);
             }
 
