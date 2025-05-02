@@ -13,9 +13,9 @@
 #include <direct.h>
 #include <windows.h>
 
-// Camera variables - adjusted for better default view
-glm::vec3 cameraPos = glm::vec3(0.0f, 1.0f, 5.0f);  // Moved closer and lowered
-glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+// Camera variables - adjusted for side view
+glm::vec3 cameraPos = glm::vec3(5.0f, 1.0f, 0.0f);  // Position camera on the side of the car
+glm::vec3 cameraFront = glm::vec3(-1.0f, 0.0f, 0.0f);  // Look toward negative X-axis
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
 // Mouse variables
