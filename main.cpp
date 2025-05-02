@@ -208,13 +208,17 @@ int main() {
         float carLength = 5.7f;
         float carWidth = 2.0f;
         float carHeight = 1.0f;
-        int numLines = 2000; // Increased number of flow lines for better visualization
+        int numLines = 400; // Increased number of flow lines for better visualization
         FlowLinesVisualization flowLinesVis(numLines, carLength, carWidth, carHeight);
         std::cout << "Flow lines visualization initialized with " << numLines << " lines!" << std::endl;
 
         // 9. OpenGL settings
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
         glEnable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glEnable(GL_LINE_SMOOTH);
+        glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
 
 
