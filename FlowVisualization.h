@@ -26,7 +26,98 @@ public:
         init(numLines, carLength, carWidth, carHeight);
     }
 
-    // Initialize the flow system
+    // 4. Add a new method to initialize a more even distribution of flow lines 
+    // Initialize flow lines in a grid pattern on the front wing
+    void initFlowLinesGrid() {
+        // Clear any existing flow lines
+        flowLines.clear();
+        flowLines.resize(numLines);
+
+        // Random number generation
+        std::random_device rd;
+        std::mt19937 gen(rd());
+
+        // Organized grid of starting points across the front wing
+        int gridWidth = static_cast<int>(std::sqrt(numLines));
+        int gridHeight = numLines / gridWidth;
+
+        // Front wing parameters
+        float frontWingZ = -carLength * 0.45f;
+        float frontWingY = carHeight * 0.2f;
+        float frontWingWidth = carWidth * 0.9f;
+
+        // Create flow lines in a grid pattern
+        int lineIndex = 0;
+        for (int i = 0; i < gridWidth && lineIndex < numLines; i++) {
+            for (int j = 0; j < gridHeight && lineIndex < numLines; j++) {
+                // Calculate normalized position (0.0 to 1.0)
+                float normalizedX = static_cast<float>(i) / (gridWidth - 1);
+                float normalizedY = static_cast<float>(j) / (gridHeight - 1);
+
+                // Map to actual position
+                float x = (normalizedX * 2.0f - 1.0f) * (frontWingWidth * 0.45f);
+                float y = normalizedY * frontWingY + 0.05f;
+
+                // Add small random variation
+                std::uniform_real_distribution<float> varX(-0.05f, 0.05f);
+                std::uniform_real_distribution<float> varY(-0.03f, 0.03f);
+                std::uniform_real_distribution<float> varZ(-0.05f, 0.05f);
+
+                // Create starting point at front wing
+                glm::vec3 startPoint = glm::vec3(
+                    x + varX(gen),
+                    y + varY(gen),
+                    frontWingZ + varZ(gen)
+                );
+
+                // Initialize the flow line
+                flowLines[lineIndex].points.clear();
+                flowLines[lineIndex].colors.clear();
+                flowLines[lineIndex].points.push_back(startPoint);
+                flowLines[lineIndex].colors.push_back(glm::vec3(0.1f, 0.4f, 0.9f));
+
+                // Set life values
+                std::uniform_real_distribution<float> lifeDist(2.0f, 5.0f);
+                flowLines[lineIndex].maxLife = lifeDist(gen);
+                flowLines[lineIndex].life = flowLines[lineIndex].maxLife;
+
+                // Initial pressure and activation
+                flowLines[lineIndex].pressure = 1.0f;
+                flowLines[lineIndex].active = true;
+
+                lineIndex++;
+            }
+        }
+
+        // Fill any remaining lines with random positions
+        std::uniform_real_distribution<float> xDist(-frontWingWidth * 0.45f, frontWingWidth * 0.45f);
+        std::uniform_real_distribution<float> yDist(0.05f, frontWingY + 0.1f);
+        std::uniform_real_distribution<float> zDist(-0.05f, 0.05f);
+
+        for (; lineIndex < numLines; lineIndex++) {
+            glm::vec3 startPoint = glm::vec3(
+                xDist(gen),
+                yDist(gen),
+                frontWingZ + zDist(gen)
+            );
+
+            // Initialize line
+            flowLines[lineIndex].points.clear();
+            flowLines[lineIndex].colors.clear();
+            flowLines[lineIndex].points.push_back(startPoint);
+            flowLines[lineIndex].colors.push_back(glm::vec3(0.1f, 0.4f, 0.9f));
+
+            // Set life values
+            std::uniform_real_distribution<float> lifeDist(2.0f, 5.0f);
+            flowLines[lineIndex].maxLife = lifeDist(gen);
+            flowLines[lineIndex].life = flowLines[lineIndex].maxLife;
+
+            flowLines[lineIndex].pressure = 1.0f;
+            flowLines[lineIndex].active = true;
+        }
+    }
+
+
     void init(int numLines, float carLength, float carWidth, float carHeight) {
         // Store car dimensions for flow calculations
         this->carLength = carLength;
@@ -38,17 +129,9 @@ public:
         // Define DRS position for pressure change detection
         drsPositionZ = carLength * 0.4f;
 
-        // Initialize the flow lines
+        // Initialize the flow lines using the grid method
         flowLines.resize(numLines);
-
-        // Random number generation
-        std::random_device rd;
-        std::mt19937 gen(rd());
-
-        // Initialize each flow line
-        for (auto& line : flowLines) {
-            resetFlowLine(line, gen);
-        }
+        initFlowLinesGrid();
 
         // Create and setup buffers
         setupBuffers();
@@ -79,16 +162,16 @@ public:
         line.active = true;
     }
 
-    // Generate a start point at the front wing
+    // 1. Update the generateFrontWingStartPoint function to ensure proper positioning
     glm::vec3 generateFrontWingStartPoint(std::mt19937& gen) {
         // Front wing position
-        float frontWingZ = -carLength * 0.45f;  // Z is length axis - slightly in front of the wing
+        float frontWingZ = -carLength * 0.45f;  // Z is length axis - front of the car
         float frontWingY = carHeight * 0.2f;    // Height of front wing
 
         // Distribution for positions along the front wing
         std::uniform_real_distribution<float> xDist(-carWidth * 0.45f, carWidth * 0.45f);
-        std::uniform_real_distribution<float> yDist(0.05f, frontWingY + 0.2f);
-        std::uniform_real_distribution<float> zVariation(-0.1f, 0.1f);
+        std::uniform_real_distribution<float> yDist(0.05f, frontWingY + 0.1f);  // Adjusted height range
+        std::uniform_real_distribution<float> zVariation(-0.05f, 0.05f);  // Smaller z variation
 
         // Generate start point at front wing
         return glm::vec3(
@@ -131,7 +214,7 @@ public:
         glBindVertexArray(0);
     }
 
-    // Update flow lines based on aerodynamic simulation
+    // 2. Modify the update function to ensure continuous flow
     void update(float deltaTime) {
         // Random number generation
         std::random_device rd;
@@ -155,8 +238,8 @@ public:
 
                     // Add a new point if the line isn't too long
                     if (line.points.size() < maxPoints) {
-                        // Calculate new position using velocity
-                        glm::vec3 newPoint = lastPoint + velocity * deltaTime * 2.0f;
+                        // Calculate new position using velocity - adjusted speed for smoother lines
+                        glm::vec3 newPoint = lastPoint + velocity * deltaTime * 3.0f;  // Increased speed multiplier
 
                         // Check if the new point is too far away or off-screen
                         if (isPointValid(newPoint)) {
@@ -258,24 +341,31 @@ public:
         }
     }
 
-    // Apply front wing aerodynamic effect
+    // 3. Update applyFrontWingEffect to better guide flow lines from front to back
     void applyFrontWingEffect(const glm::vec3& point, glm::vec3& velocity) {
         // Front wing position
         float frontWingZ = -carLength * 0.4f;
         float frontWingY = carHeight * 0.2f;
         float frontWingWidth = carWidth * 0.9f;
 
-        // Check if point is near the front wing
-        if (point.z > frontWingZ - carLength * 0.1f &&
-            point.z < frontWingZ + carLength * 0.1f &&
-            point.y < frontWingY + carHeight * 0.1f &&
+        // Check if point is near the front wing with expanded detection area
+        if (point.z > frontWingZ - carLength * 0.15f &&
+            point.z < frontWingZ + carLength * 0.15f &&
+            point.y < frontWingY + carHeight * 0.15f &&
             std::abs(point.x) < frontWingWidth * 0.5f) {
 
-            // Downforce
-            velocity.y -= 0.4f;
+            // Enhanced backward flow to ensure lines travel along car length
+            velocity.z += 0.7f;  // Increased backward flow component
 
-            // Accelerate flow
-            velocity.z += 0.3f;
+            // Downforce varies based on position
+            if (point.y < frontWingY * 0.7f) {
+                // Stronger downforce under the wing
+                velocity.y -= 0.5f;
+            }
+            else {
+                // Less downforce or slight upforce over the wing
+                velocity.y += 0.2f;
+            }
 
             // Create wing-tip vortices
             if (std::abs(point.x) > frontWingWidth * 0.4f) {
@@ -284,10 +374,12 @@ public:
                 velocity.y += 0.2f;
             }
 
-            // Direct flow around the car
-            if (point.y > frontWingY) {
-                // Flow over the top of the wing
-                velocity.y += 0.2f;
+            // Direct flow around the car nose
+            float distToCenter = std::abs(point.x) / (frontWingWidth * 0.5f);
+            if (distToCenter > 0.7f) {
+                // Flow around side of nose
+                float sideForce = 0.3f * (distToCenter - 0.7f) / 0.3f;
+                velocity.x += (point.x > 0) ? sideForce : -sideForce;
             }
         }
     }

@@ -42,6 +42,8 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 void processInput(GLFWwindow* window);
 void printCurrentDirectory();
 
+
+
 // Mouse callback function
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     float xpos = static_cast<float>(xposIn);
@@ -99,6 +101,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
         std::cout << "Camera reset" << std::endl;
     }
+
 }
 
 // Process keyboard input for camera movement
@@ -156,6 +159,11 @@ int main() {
         return -1;
     }
 
+    cameraPos = glm::vec3(3.0f, 1.0f, -3.0f);  // Position more toward front-side of car
+    yaw = -135.0f;  // Look at the front corner
+    pitch = 0.0f;
+    cameraFront = glm::vec3(-1.0f, 0.0f, 1.0f); // Looking toward front-center of car
+
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
@@ -204,6 +212,8 @@ int main() {
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
         glEnable(GL_DEPTH_TEST);
 
+
+
         // 10. Main loop
         while (!glfwWindowShouldClose(window)) {
             float currentFrame = glfwGetTime();
@@ -228,8 +238,12 @@ int main() {
                 ourShader.setMat4("projection", projection);
                 ourShader.setMat4("view", view);
 
+                // Updated code:
                 glm::mat4 model = glm::mat4(1.0f);
-                model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+                // Translate car to align with flow visualization starting points
+                // Flow lines start at frontWingZ = -carLength * 0.45f
+                model = glm::translate(model, glm::vec3(0.0f, 0.0f, carLength * -0.30f));
+                // Rotate to match the correct orientation (keeping your 90-degree Y rotation)
                 model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
                 float scale = 1.0f;
                 model = glm::scale(model, glm::vec3(scale));
