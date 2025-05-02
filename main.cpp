@@ -26,6 +26,8 @@ float lastX = 800.0f / 2.0f;
 float lastY = 600.0f / 2.0f;
 float fov = 45.0f;
 
+
+
 // Timing
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
@@ -101,7 +103,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
         std::cout << "Camera reset" << std::endl;
     }
-
 }
 
 // Process keyboard input for camera movement
@@ -159,10 +160,12 @@ int main() {
         return -1;
     }
 
-    cameraPos = glm::vec3(3.0f, 1.0f, -3.0f);  // Position more toward front-side of car
-    yaw = -135.0f;  // Look at the front corner
+
+    // Update camera position for front view (in the main function):
+    cameraPos = glm::vec3(0.0f, 1.5f, -8.0f);  // Position in front of the car
+    yaw = -90.0f;  // Looking straight ahead
     pitch = 0.0f;
-    cameraFront = glm::vec3(-1.0f, 0.0f, 1.0f); // Looking toward front-center of car
+    cameraFront = glm::vec3(0.0f, 0.0f, 1.0f); // Looking toward the car
 
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
@@ -201,10 +204,11 @@ int main() {
         std::cout << "Model loaded successfully!" << std::endl;
 
         // 8. Create flow lines visualization
+// Update the flow lines visualization (in the main function):
         float carLength = 5.7f;
         float carWidth = 2.0f;
         float carHeight = 1.0f;
-        int numLines = 500; // Number of flow lines
+        int numLines = 2000; // Increased number of flow lines for better visualization
         FlowLinesVisualization flowLinesVis(numLines, carLength, carWidth, carHeight);
         std::cout << "Flow lines visualization initialized with " << numLines << " lines!" << std::endl;
 
@@ -238,13 +242,12 @@ int main() {
                 ourShader.setMat4("projection", projection);
                 ourShader.setMat4("view", view);
 
-                // Updated code:
+                // Update car position/rotation (in the rendering loop):
                 glm::mat4 model = glm::mat4(1.0f);
-                // Translate car to align with flow visualization starting points
-                // Flow lines start at frontWingZ = -carLength * 0.45f
-                model = glm::translate(model, glm::vec3(0.0f, 0.0f, carLength * -0.30f));
-                // Rotate to match the correct orientation (keeping your 90-degree Y rotation)
-                model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+                // Center the car properly
+                model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
+                // Rotate to face forward
+                model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
                 float scale = 1.0f;
                 model = glm::scale(model, glm::vec3(scale));
 
