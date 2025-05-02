@@ -1,5 +1,5 @@
-#ifndef FLOW_VISUALIZATION_H
-#define FLOW_VISUALIZATION_H
+#ifndef FLOW_LINES_VISUALIZATION_H
+#define FLOW_LINES_VISUALIZATION_H
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -9,108 +9,93 @@
 #include <random>
 #include "Shader.h"
 
-// Structure to hold particle data
-struct FlowParticle {
-    glm::vec3 position;
-    glm::vec3 velocity;
-    glm::vec3 color;
-    float life;
-    float size;
-    bool passedDRS;     // Flag to track if particle has passed DRS/rear wing
-    float pressure;     // Store pressure value for visualization
+// Structure to hold flow line data
+struct FlowLine {
+    std::vector<glm::vec3> points;    // Series of points forming the line
+    std::vector<glm::vec3> colors;    // Color for each point (allows gradient effects)
+    float life;                       // Life of the flow line
+    float maxLife;                    // Maximum life span
+    float pressure;                   // Store pressure value for visualization
+    bool active;                      // Is the line currently active
 };
 
-class FlowVisualization {
+class FlowLinesVisualization {
 public:
     // Constructor
-    FlowVisualization(int numParticles, float carLength, float carWidth, float carHeight) {
-        init(numParticles, carLength, carWidth, carHeight);
+    FlowLinesVisualization(int numLines, float carLength, float carWidth, float carHeight) {
+        init(numLines, carLength, carWidth, carHeight);
     }
 
     // Initialize the flow system
-    void init(int numParticles, float carLength, float carWidth, float carHeight) {
+    void init(int numLines, float carLength, float carWidth, float carHeight) {
         // Store car dimensions for flow calculations
         this->carLength = carLength;
         this->carWidth = carWidth;
         this->carHeight = carHeight;
+        this->numLines = numLines;
+        this->maxPoints = 50;  // Maximum points per line
 
         // Define DRS position for pressure change detection
-        drsPositionZ = carLength * 0.4f;  // Position of rear wing/DRS (now on Z-axis)
+        drsPositionZ = carLength * 0.4f;
 
-        // Initialize the particles
-        particles.resize(numParticles);
+        // Initialize the flow lines
+        flowLines.resize(numLines);
 
         // Random number generation
         std::random_device rd;
         std::mt19937 gen(rd());
 
-        // Adjusted distributions for side view of the car
-        // Most particles start to the side of the car now
-        std::uniform_real_distribution<float> zDist(-carLength * 2.5f, -carLength * 0.5f); // Now Z is the front-back axis
-        std::uniform_real_distribution<float> yDist(0.0f, carHeight * 2.0f);  // Y still up
-        std::uniform_real_distribution<float> xDist(-carWidth * 1.5f, carWidth * 1.5f);  // X is now the side axis
-
-        // Longer life for better flow visualization
-        std::uniform_real_distribution<float> lifeDist(2.0f, 6.0f);
-        std::uniform_real_distribution<float> sizeDist(0.03f, 0.08f);
-
-        // Initialize particles with positions in front of the car
-        for (auto& particle : particles) {
-            resetParticle(particle, true, gen, xDist, yDist, zDist, lifeDist, sizeDist);
+        // Initialize each flow line
+        for (auto& line : flowLines) {
+            resetFlowLine(line, gen);
         }
 
         // Create and setup buffers
         setupBuffers();
     }
 
-    // Reset a particle
-    void resetParticle(FlowParticle& particle, bool randomPos,
-        std::mt19937& gen,
-        std::uniform_real_distribution<float>& xDist,
-        std::uniform_real_distribution<float>& yDist,
-        std::uniform_real_distribution<float>& zDist,
-        std::uniform_real_distribution<float>& lifeDist,
-        std::uniform_real_distribution<float>& sizeDist) {
+    // Reset a flow line - start from front wing area
+    void resetFlowLine(FlowLine& line, std::mt19937& gen) {
+        // Clear previous points and colors
+        line.points.clear();
+        line.colors.clear();
 
-        // Initial position - always start in front of the car
-        if (randomPos) {
-            // Random position in front of the car
-            particle.position = glm::vec3(xDist(gen), yDist(gen), zDist(gen));
-        }
-        else {
-            // Reset to a specific starting position
-            // Distribute along the side of the car for better visualization
-            float sideOffset = carWidth * 0.8f;
-            float heightVariation = carHeight * 1.0f;
-            float lengthVariation = carLength * 0.8f;
+        // Start with a single point at the front wing area
+        glm::vec3 startPoint = generateFrontWingStartPoint(gen);
+        line.points.push_back(startPoint);
 
-            particle.position = glm::vec3(
-                -sideOffset - (rand() % 100) / 200.0f,  // Slightly randomize X position (now side of car)
-                (rand() % 100) / 100.0f * heightVariation,  // Vary height
-                ((rand() % 200) - 100) / 100.0f * lengthVariation  // Vary position along length (Z-axis now)
-            );
-        }
+        // Initial color - blue to indicate cool, low pressure areas
+        line.colors.push_back(glm::vec3(0.1f, 0.4f, 0.9f));
 
-        // Initial velocity (directional flow from side of car)
-        // Higher initial speed for better visualization
-        particle.velocity = glm::vec3(1.5f + (randomFloat(gen) * 0.5f),  // Now moving along X-axis (side to side)
-            randomFloat(gen) * 0.2f,                                    // Small vertical variation
-            randomFloat(gen) * 0.2f);                                   // Small variation along Z-axis
-
-        // Starting color - blue to indicate cool, low pressure areas
-        particle.color = glm::vec3(0.1f, 0.4f, 0.9f);
-
-        // Reset passed DRS flag
-        particle.passedDRS = false;
+        // Set initial life values
+        std::uniform_real_distribution<float> lifeDist(2.0f, 5.0f);
+        line.maxLife = lifeDist(gen);
+        line.life = line.maxLife;
 
         // Initial pressure (normal atmosphere)
-        particle.pressure = 1.0f;
+        line.pressure = 1.0f;
 
-        // Life determines how long the particle exists
-        particle.life = lifeDist(gen);
+        // Mark as active
+        line.active = true;
+    }
 
-        // Size of the particle
-        particle.size = sizeDist(gen);
+    // Generate a start point at the front wing
+    glm::vec3 generateFrontWingStartPoint(std::mt19937& gen) {
+        // Front wing position
+        float frontWingZ = -carLength * 0.45f;  // Z is length axis - slightly in front of the wing
+        float frontWingY = carHeight * 0.2f;    // Height of front wing
+
+        // Distribution for positions along the front wing
+        std::uniform_real_distribution<float> xDist(-carWidth * 0.45f, carWidth * 0.45f);
+        std::uniform_real_distribution<float> yDist(0.05f, frontWingY + 0.2f);
+        std::uniform_real_distribution<float> zVariation(-0.1f, 0.1f);
+
+        // Generate start point at front wing
+        return glm::vec3(
+            xDist(gen),                    // Position across width of wing
+            yDist(gen),                    // Slight variation in height
+            frontWingZ + zVariation(gen)   // Position along length with slight variation
+        );
     }
 
     // Random float helper between -1 and 1
@@ -125,19 +110,13 @@ public:
         glGenVertexArrays(1, &VAO);
         glGenBuffers(1, &VBO);
 
-        // Setup the data for a point sprite
-        std::vector<float> particleVertices = {
-            // Position     // Color
-            0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f
-        };
-
         // Bind vertex array
         glBindVertexArray(VAO);
 
-        // Bind and set vertex buffer
+        // Allocate buffer space (we'll update this each frame)
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        glBufferData(GL_ARRAY_BUFFER, particleVertices.size() * sizeof(float),
-            particleVertices.data(), GL_STATIC_DRAW);
+        // Pre-allocate a large buffer - 6 floats per vertex (position + color) * max vertices per line * number of lines
+        glBufferData(GL_ARRAY_BUFFER, 6 * maxPoints * numLines * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
         // Position attribute
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
@@ -152,349 +131,391 @@ public:
         glBindVertexArray(0);
     }
 
-    // Update particle positions based on aerodynamic simulation
+    // Update flow lines based on aerodynamic simulation
     void update(float deltaTime) {
         // Random number generation
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_real_distribution<float> xDist(-carLength * 2.5f, -carLength * 0.5f);
-        std::uniform_real_distribution<float> yDist(0.0f, carHeight * 2.0f);
-        std::uniform_real_distribution<float> zDist(-carWidth * 1.5f, carWidth * 1.5f);
-        std::uniform_real_distribution<float> lifeDist(2.0f, 6.0f);
-        std::uniform_real_distribution<float> sizeDist(0.03f, 0.08f);
 
-        for (auto& particle : particles) {
+        for (auto& line : flowLines) {
             // Decrease life
-            particle.life -= deltaTime;
+            line.life -= deltaTime;
 
-            if (particle.life > 0.0f) {
-                // Update position based on velocity
-                particle.position += particle.velocity * deltaTime * 2.0f;
+            if (line.life <= 0.0f) {
+                // Reset line if it's dead
+                resetFlowLine(line, gen);
+            }
+            else if (line.active) {
+                // Only process active lines
 
-                // Apply all aerodynamic forces
-                applyAerodynamicForces(particle, deltaTime);
+                // Get the last point of the line
+                if (!line.points.empty()) {
+                    glm::vec3 lastPoint = line.points.back();
+                    glm::vec3 velocity = calculateVelocityAtPoint(lastPoint);
 
-                // Check if particle has passed the DRS/rear wing
-                if (!particle.passedDRS && particle.position.z > drsPositionZ) {
-                    particle.passedDRS = true;
+                    // Add a new point if the line isn't too long
+                    if (line.points.size() < maxPoints) {
+                        // Calculate new position using velocity
+                        glm::vec3 newPoint = lastPoint + velocity * deltaTime * 2.0f;
+
+                        // Check if the new point is too far away or off-screen
+                        if (isPointValid(newPoint)) {
+                            line.points.push_back(newPoint);
+
+                            // Calculate pressure for color
+                            float pressure = calculatePressureAtPoint(newPoint);
+                            line.pressure = pressure;
+
+                            // Set color based on pressure and position
+                            glm::vec3 color = calculateColorForPoint(newPoint, pressure, line.points.size() > 1);
+                            line.colors.push_back(color);
+                        }
+                        else {
+                            // If the point is invalid, deactivate the line but keep it visible
+                            line.active = false;
+                        }
+                    }
                 }
-
-                // Update color based on pressure and DRS passage
-                updateParticleColor(particle);
-            }
-            else {
-                // Reset particle if it's dead
-                resetParticle(particle, false, gen, xDist, yDist, zDist, lifeDist, sizeDist);
             }
         }
     }
 
-    // Apply all aerodynamic forces to a particle
-    void applyAerodynamicForces(FlowParticle& particle, float deltaTime) {
-        // Car body forces
-        applyCarBodyForces(particle);
+    // Calculate velocity vector at a given point
+    glm::vec3 calculateVelocityAtPoint(const glm::vec3& point) {
+        // Base velocity - moving backward along Z-axis
+        glm::vec3 velocity = glm::vec3(0.0f, 0.0f, 1.0f);
 
-        // Rear wing / DRS forces
-        applyRearWingForces(particle);
+        // Apply car body effect
+        applyCarBodyEffect(point, velocity);
 
-        // Front wing effects
-        applyFrontWingForces(particle);
+        // Apply front wing effect
+        applyFrontWingEffect(point, velocity);
 
-        // Floor and diffuser effects
-        applyFloorForces(particle);
+        // Apply rear wing effect
+        applyRearWingEffect(point, velocity);
 
-        // Calculate pressure based on velocity and position
-        calculatePressure(particle);
+        // Apply floor effect
+        applyFloorEffect(point, velocity);
+
+        // Normalize and scale for consistent line growth speed
+        return glm::normalize(velocity) * 1.5f;
     }
 
-    // Calculate pressure for visualization
-    void calculatePressure(FlowParticle& particle) {
-        // Simplified Bernoulli's principle: 
-        // Higher velocity = lower pressure
-        float speed = glm::length(particle.velocity);
-
-        // Inverse relationship between speed and pressure
-        // Normalize to a reasonable range
-        particle.pressure = 2.0f / (0.5f * speed * speed + 0.5f);
-
-        // Additional pressure effects for specific areas
-        // Lower pressure above the car
-        if (particle.position.y > carHeight &&
-            particle.position.x > -carLength * 0.5f &&
-            particle.position.x < carLength * 0.5f) {
-            particle.pressure *= 0.7f;
-        }
-
-        // Very low pressure under the car (ground effect)
-        if (particle.position.y < carHeight * 0.3f &&
-            particle.position.y > 0.0f &&
-            particle.position.x > -carLength * 0.4f &&
-            particle.position.x < carLength * 0.3f) {
-            particle.pressure *= 0.4f;
-        }
-    }
-
-    // Update particle color based on pressure and DRS passage
-    void updateParticleColor(FlowParticle& particle) {
-        // Base color determined by pressure:
-        // - High pressure (low speed): red/orange
-        // - Low pressure (high speed): blue/purple
-
-        if (particle.passedDRS) {
-            // Particles that have passed DRS - highlight with more vibrant colors
-            // Low pressure (high speed) areas: purple/magenta
-            if (particle.pressure < 0.6f) {
-                particle.color = glm::vec3(
-                    0.6f + (0.4f * (1.0f - particle.pressure)),  // Red component
-                    0.1f,                                        // Green component
-                    0.8f                                         // Blue component
-                );
-            }
-            // High pressure (low speed) areas: bright orange/yellow
-            else {
-                particle.color = glm::vec3(
-                    0.9f,                                        // Red component
-                    0.4f + (0.4f * (1.0f - particle.pressure)),  // Green component
-                    0.0f                                         // Blue component
-                );
-            }
-        }
-        else {
-            // Particles that haven't passed DRS yet
-            // Use a cooler color scheme (blues to cyans)
-            if (particle.pressure < 0.5f) {
-                // Very low pressure: deep blue
-                particle.color = glm::vec3(0.1f, 0.2f, 0.9f);
-            }
-            else if (particle.pressure < 0.8f) {
-                // Medium pressure: cyan/teal
-                particle.color = glm::vec3(0.1f, 0.6f, 0.8f);
-            }
-            else {
-                // High pressure: light blue
-                particle.color = glm::vec3(0.2f, 0.5f, 0.7f);
-            }
-        }
-    }
-
-    // Apply forces from car body
-    void applyCarBodyForces(FlowParticle& particle) {
-        // Simplified car body as a box
+    // Apply car body aerodynamic effect to velocity
+    void applyCarBodyEffect(const glm::vec3& point, glm::vec3& velocity) {
+        // Car body as a box
         float carZ = 0.0f; // Car centered at origin
 
-        // Check if particle is near the car body (with updated orientation)
-        if (particle.position.z > carZ - carLength * 0.5f &&
-            particle.position.z < carZ + carLength * 0.5f &&
-            particle.position.y < carHeight &&
-            std::abs(particle.position.x) < carWidth * 0.5f) {
+        // Check if point is near the car body
+        if (point.z > carZ - carLength * 0.5f &&
+            point.z < carZ + carLength * 0.5f &&
+            point.y < carHeight &&
+            std::abs(point.x) < carWidth * 0.5f) {
 
-            // Compute distance to car surface (simplified)
-            float distToSurface = 0.1f;
-
-            // Direction away from car body (improved for better flow visualization)
+            // Direction away from car body
             glm::vec3 awayFromCar;
 
             // Top surface - upward flow
-            if (particle.position.y > carHeight * 0.8f) {
-                awayFromCar = glm::normalize(glm::vec3(0.5f, 1.0f, particle.position.x * 0.2f));
+            if (point.y > carHeight * 0.8f) {
+                awayFromCar = glm::normalize(glm::vec3(0.5f, 1.0f, point.x * 0.2f));
             }
             // Bottom surface - downward flow with ground effect
-            else if (particle.position.y < carHeight * 0.3f) {
-                awayFromCar = glm::normalize(glm::vec3(1.0f, -0.2f, particle.position.x * 0.1f));
+            else if (point.y < carHeight * 0.3f) {
+                awayFromCar = glm::normalize(glm::vec3(1.0f, -0.2f, point.x * 0.1f));
             }
             // Side surfaces - outward flow
-            else if (std::abs(particle.position.x) > carWidth * 0.4f) {
-                float sideDir = particle.position.x > 0 ? 1.0f : -1.0f;
+            else if (std::abs(point.x) > carWidth * 0.4f) {
+                float sideDir = point.x > 0 ? 1.0f : -1.0f;
                 awayFromCar = glm::normalize(glm::vec3(sideDir, 0.1f, 0.5f));
             }
             // Front of car - flows around
-            else if (particle.position.z < -carLength * 0.3f) {
+            else if (point.z < -carLength * 0.3f) {
                 awayFromCar = glm::normalize(glm::vec3(
-                    particle.position.x * 0.7f,
-                    particle.position.y < carHeight * 0.5f ? -0.3f : 0.3f,
+                    point.x * 0.7f,
+                    point.y < carHeight * 0.5f ? -0.3f : 0.3f,
                     0.2f
                 ));
             }
             // Rear of car - flows behind
-            else if (particle.position.z > carLength * 0.3f) {
+            else if (point.z > carLength * 0.3f) {
                 awayFromCar = glm::normalize(glm::vec3(
-                    particle.position.x * 0.3f,
-                    particle.position.y < carHeight * 0.5f ? -0.2f : 0.2f,
+                    point.x * 0.3f,
+                    point.y < carHeight * 0.5f ? -0.2f : 0.2f,
                     1.0f
                 ));
             }
             // Middle of car
             else {
                 awayFromCar = glm::normalize(glm::vec3(
-                    particle.position.x,
-                    particle.position.y < carHeight * 0.5f ? -0.3f : 0.3f,
+                    point.x,
+                    point.y < carHeight * 0.5f ? -0.3f : 0.3f,
                     0.7f
                 ));
             }
-            // Apply force away from car with strength decreasing with distance
-            float forceMagnitude = 1.0f / (distToSurface + 0.1f);
-            particle.velocity += awayFromCar * forceMagnitude * 0.02f;
 
-            // Ensure particle doesn't get stuck inside car
-            if (particle.position.y < carHeight * 0.1f && particle.position.y > 0.0f) {
-                particle.position.y = carHeight * 0.1f;
-                particle.velocity.y *= 0.5f;
-            }
+            // Apply force away from car
+            velocity += awayFromCar * 1.5f;
         }
     }
 
-    // Apply forces from rear wing (DRS area)
-    void applyRearWingForces(FlowParticle& particle) {
-        // Rear wing position (updated for new orientation)
-        float rearWingZ = carLength * 0.4f;  // Now Z represents the length axis
-        float rearWingY = carHeight * 0.8f;
-        float rearWingX = 0.0f;
-        float rearWingWidth = carWidth * 0.8f;
-        float rearWingHeight = carHeight * 0.2f;
-
-        // Check if particle is near the rear wing (updated for new orientation)
-        if (particle.position.z > rearWingZ - carLength * 0.1f &&
-            particle.position.z < rearWingZ + carLength * 0.2f &&
-            particle.position.y > rearWingY - rearWingHeight &&
-            particle.position.y < rearWingY + rearWingHeight &&
-            std::abs(particle.position.x) < rearWingWidth * 0.5f) {
-
-            // Downward force (rear wing generates downforce)
-            float forceMagnitude = 0.08f;
-            particle.velocity.y -= forceMagnitude;
-
-            // Accelerate flow over wing
-            particle.velocity.z += 0.05f;  // Now Z is the flow direction
-
-            // Create wing-tip vortices at the edges
-            if (std::abs(particle.position.x) > rearWingWidth * 0.4f) {
-                float vortexDir = particle.position.x > 0 ? 1.0f : -1.0f;
-                particle.velocity.x -= vortexDir * 0.03f;
-                particle.velocity.y += 0.02f;
-            }
-
-            // Create turbulence behind the wing
-            if (particle.position.z > rearWingZ) {
-                // More chaotic movement behind the wing
-                particle.velocity.y += (rand() % 100) / 500.0f - 0.1f;
-                particle.velocity.x += (rand() % 100) / 500.0f - 0.1f;
-            }
-        }
-    }
-
-    // Apply forces from front wing
-    void applyFrontWingForces(FlowParticle& particle) {
-        // Front wing position (updated for new orientation)
-        float frontWingZ = -carLength * 0.4f;  // Now Z is the length axis
+    // Apply front wing aerodynamic effect
+    void applyFrontWingEffect(const glm::vec3& point, glm::vec3& velocity) {
+        // Front wing position
+        float frontWingZ = -carLength * 0.4f;
         float frontWingY = carHeight * 0.2f;
         float frontWingWidth = carWidth * 0.9f;
 
-        // Check if particle is near the front wing (updated for new orientation)
-        if (particle.position.z > frontWingZ - carLength * 0.1f &&
-            particle.position.z < frontWingZ + carLength * 0.1f &&
-            particle.position.y < frontWingY + carHeight * 0.1f &&
-            std::abs(particle.position.x) < frontWingWidth * 0.5f) {
+        // Check if point is near the front wing
+        if (point.z > frontWingZ - carLength * 0.1f &&
+            point.z < frontWingZ + carLength * 0.1f &&
+            point.y < frontWingY + carHeight * 0.1f &&
+            std::abs(point.x) < frontWingWidth * 0.5f) {
 
             // Downforce
-            float forceMagnitude = 0.04f;
-            particle.velocity.y -= forceMagnitude;
+            velocity.y -= 0.4f;
 
-            // Accelerate flow under the wing
-            particle.velocity.z += 0.03f;  // Now Z is the flow direction
+            // Accelerate flow
+            velocity.z += 0.3f;
 
             // Create wing-tip vortices
-            if (std::abs(particle.position.x) > frontWingWidth * 0.4f) {
-                float vortexDir = particle.position.x > 0 ? 1.0f : -1.0f;
-                particle.velocity.x -= vortexDir * 0.04f;
-                particle.velocity.y += 0.02f;
-
-                // Color change for vortices
-                particle.color = glm::vec3(0.3f, 0.5f, 0.9f);
+            if (std::abs(point.x) > frontWingWidth * 0.4f) {
+                float vortexDir = point.x > 0 ? 1.0f : -1.0f;
+                velocity.x -= vortexDir * 0.4f;
+                velocity.y += 0.2f;
             }
 
             // Direct flow around the car
-            if (particle.position.y > frontWingY) {
+            if (point.y > frontWingY) {
                 // Flow over the top of the wing
-                particle.velocity.y += 0.02f;
+                velocity.y += 0.2f;
             }
         }
     }
 
-    // Apply forces from floor and diffuser
-    void applyFloorForces(FlowParticle& particle) {
-        // Check if particle is under the car (ground effect area)
-        // Updated for new orientation - now Z is the length axis
-        if (particle.position.y < carHeight * 0.3f &&
-            particle.position.y > 0.0f &&
-            particle.position.z > -carLength * 0.4f &&
-            particle.position.z < carLength * 0.3f &&
-            std::abs(particle.position.x) < carWidth * 0.4f) {
+    // Apply rear wing aerodynamic effect
+    void applyRearWingEffect(const glm::vec3& point, glm::vec3& velocity) {
+        // Rear wing position
+        float rearWingZ = carLength * 0.4f;
+        float rearWingY = carHeight * 0.8f;
+        float rearWingWidth = carWidth * 0.8f;
+        float rearWingHeight = carHeight * 0.2f;
+
+        // Check if point is near the rear wing
+        if (point.z > rearWingZ - carLength * 0.1f &&
+            point.z < rearWingZ + carLength * 0.2f &&
+            point.y > rearWingY - rearWingHeight &&
+            point.y < rearWingY + rearWingHeight &&
+            std::abs(point.x) < rearWingWidth * 0.5f) {
+
+            // Downward force (rear wing generates downforce)
+            velocity.y -= 0.8f;
+
+            // Accelerate flow over wing
+            velocity.z += 0.5f;
+
+            // Create wing-tip vortices at the edges
+            if (std::abs(point.x) > rearWingWidth * 0.4f) {
+                float vortexDir = point.x > 0 ? 1.0f : -1.0f;
+                velocity.x -= vortexDir * 0.3f;
+                velocity.y += 0.2f;
+            }
+
+            // Create turbulence behind the wing
+            if (point.z > rearWingZ) {
+                // More chaotic movement behind the wing
+                velocity.y += (rand() % 100) / 500.0f - 0.1f;
+                velocity.x += (rand() % 100) / 500.0f - 0.1f;
+            }
+        }
+    }
+
+    // Apply floor aerodynamic effect
+    void applyFloorEffect(const glm::vec3& point, glm::vec3& velocity) {
+        // Check if point is under the car (ground effect area)
+        if (point.y < carHeight * 0.3f &&
+            point.y > 0.0f &&
+            point.z > -carLength * 0.4f &&
+            point.z < carLength * 0.3f &&
+            std::abs(point.x) < carWidth * 0.4f) {
 
             // Venturi effect - accelerate air under the car
-            particle.velocity.z += 0.04f;  // Now Z is the flow direction
+            velocity.z += 0.4f;
 
             // Ground effect pulls car down
-            particle.velocity.y -= 0.01f;
+            velocity.y -= 0.1f;
 
             // For diffuser at the rear, create expanding flow pattern
-            if (particle.position.z > 0.0f) {
+            if (point.z > 0.0f) {
                 // Diffuser expands the flow based on position
-                float diffuserStrength = 0.05f * (particle.position.z / carLength);
+                float diffuserStrength = 0.5f * (point.z / carLength);
 
                 // Upward component at diffuser exit
-                particle.velocity.y += diffuserStrength;
+                velocity.y += diffuserStrength;
 
                 // Outward component creating wider wake
                 float sideForce = diffuserStrength * 0.7f;
-                particle.velocity.x += (particle.position.x > 0) ? sideForce : -sideForce;
+                velocity.x += (point.x > 0) ? sideForce : -sideForce;
             }
         }
+    }
+
+    // Calculate pressure at a given point for visualization
+    float calculatePressureAtPoint(const glm::vec3& point) {
+        // Base pressure
+        float pressure = 1.0f;
+
+        // Calculate velocity magnitude at this point
+        glm::vec3 vel = calculateVelocityAtPoint(point);
+        float speed = glm::length(vel);
+
+        // Apply Bernoulli's principle: higher velocity = lower pressure
+        pressure = 2.0f / (0.5f * speed * speed + 0.5f);
+
+        // Additional pressure effects for specific areas
+        // Lower pressure above the car
+        if (point.y > carHeight &&
+            point.z > -carLength * 0.5f &&
+            point.z < carLength * 0.5f &&
+            std::abs(point.x) < carWidth * 0.5f) {
+            pressure *= 0.7f;
+        }
+
+        // Very low pressure under the car (ground effect)
+        if (point.y < carHeight * 0.3f &&
+            point.y > 0.0f &&
+            point.z > -carLength * 0.4f &&
+            point.z < carLength * 0.3f &&
+            std::abs(point.x) < carWidth * 0.4f) {
+            pressure *= 0.4f;
+        }
+
+        return pressure;
+    }
+
+    // Calculate color for a point based on position and pressure
+    glm::vec3 calculateColorForPoint(const glm::vec3& point, float pressure, bool isPastDRS) {
+        // Check if the point is past the DRS/rear wing position
+        bool pastDRS = point.z > drsPositionZ;
+
+        // Base color determined by pressure:
+        // - High pressure (low speed): red/orange
+        // - Low pressure (high speed): blue/purple
+
+        if (pastDRS) {
+            // Points past DRS - highlight with more vibrant colors
+            // Low pressure (high speed) areas: purple/magenta
+            if (pressure < 0.6f) {
+                return glm::vec3(
+                    0.6f + (0.4f * (1.0f - pressure)),  // Red component
+                    0.1f,                                // Green component
+                    0.8f                                 // Blue component
+                );
+            }
+            // High pressure (low speed) areas: bright orange/yellow
+            else {
+                return glm::vec3(
+                    0.9f,                                // Red component
+                    0.4f + (0.4f * (1.0f - pressure)),   // Green component
+                    0.0f                                 // Blue component
+                );
+            }
+        }
+        else {
+            // Points before DRS
+            // Use a cooler color scheme (blues to cyans)
+            if (pressure < 0.5f) {
+                // Very low pressure: deep blue
+                return glm::vec3(0.1f, 0.2f, 0.9f);
+            }
+            else if (pressure < 0.8f) {
+                // Medium pressure: cyan/teal
+                return glm::vec3(0.1f, 0.6f, 0.8f);
+            }
+            else {
+                // High pressure: light blue
+                return glm::vec3(0.2f, 0.5f, 0.7f);
+            }
+        }
+    }
+
+    // Check if a point is valid (not too far from car, not below ground, etc.)
+    bool isPointValid(const glm::vec3& point) {
+        // Check if point is within valid bounds
+        if (point.y < -0.1f) return false;  // Below ground
+
+        // Check distance from car center
+        float distToCenter = glm::length(glm::vec3(point.x, point.y - carHeight * 0.5f, point.z));
+        if (distToCenter > carLength * 3.0f) return false;  // Too far from car
+
+        return true;
     }
 
     // Draw the flow visualization
     void draw(Shader& shader, const glm::mat4& view, const glm::mat4& projection) {
-        // Enable blending for semi-transparent particles
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-        // Enable point size
-        glEnable(GL_PROGRAM_POINT_SIZE);
-
         // Use shader
         shader.use();
 
         // Set view and projection matrices
         shader.setMat4("view", view);
         shader.setMat4("projection", projection);
+        shader.setMat4("model", glm::mat4(1.0f));
 
-        // Draw each particle
+        // Enable line smoothing for better visuals
+        glEnable(GL_LINE_SMOOTH);
+        glLineWidth(2.0f);  // Thicker lines for better visibility
+
+        // Enable blending for semi-transparent lines
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // Bind VAO
         glBindVertexArray(VAO);
-        for (const auto& particle : particles) {
-            // Set particle properties
-            glm::mat4 model = glm::mat4(1.0f);
-            model = glm::translate(model, particle.position);
-            model = glm::scale(model, glm::vec3(particle.size));
 
-            shader.setMat4("model", model);
-            shader.setVec3("particleColor", particle.color);
+        // Prepare buffer data
+        std::vector<float> lineData;
+        lineData.reserve(6 * maxPoints * numLines);  // Pre-allocate space
 
-            // Adjust alpha based on life and pressure
-            float alpha = particle.life * 0.5f;
+        for (const auto& line : flowLines) {
+            if (line.points.size() < 2) continue;  // Skip lines with insufficient points
 
-            // Make low pressure areas more visible
-            if (particle.pressure < 0.6f) {
-                alpha *= 1.2f;
+            // Add all points of this line
+            for (size_t i = 0; i < line.points.size(); i++) {
+                // Position
+                lineData.push_back(line.points[i].x);
+                lineData.push_back(line.points[i].y);
+                lineData.push_back(line.points[i].z);
+
+                // Color
+                lineData.push_back(line.colors[i].r);
+                lineData.push_back(line.colors[i].g);
+                lineData.push_back(line.colors[i].b);
             }
-
-            shader.setFloat("particleAlpha", alpha);
-
-            // Draw point
-            glDrawArrays(GL_POINTS, 0, 1);
         }
 
-        // Disable states
+        // Upload line data to GPU
+        glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, lineData.size() * sizeof(float), lineData.data());
+
+        // Set alpha based on line life
+        shader.setFloat("lineAlpha", 0.8f);  // Constant alpha for now
+
+        // Draw all lines
+        int offset = 0;
+        for (const auto& line : flowLines) {
+            if (line.points.size() < 2) continue;  // Skip lines with insufficient points
+
+            // Calculate alpha based on line life
+            float alpha = line.life / line.maxLife;
+            shader.setFloat("lineAlpha", alpha * 0.8f);
+
+            // Draw this line as a line strip
+            glDrawArrays(GL_LINE_STRIP, offset, line.points.size());
+            offset += line.points.size();
+        }
+
+        // Cleanup
+        glDisable(GL_LINE_SMOOTH);
         glDisable(GL_BLEND);
-        glDisable(GL_PROGRAM_POINT_SIZE);
         glBindVertexArray(0);
     }
 
@@ -505,10 +526,12 @@ public:
     }
 
 private:
-    std::vector<FlowParticle> particles;
+    std::vector<FlowLine> flowLines;
     unsigned int VAO, VBO;
     float carLength, carWidth, carHeight;
-    float drsPositionZ;  // Z position of DRS/rear wing for detection (used to be X) 
+    float drsPositionZ;
+    int numLines;
+    int maxPoints;
 };
 
-#endif // FLOW_VISUALIZATION_H
+#endif // FLOW_LINES_VISUALIZATION_H

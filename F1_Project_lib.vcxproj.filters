@@ -44,6 +44,12 @@
     <None Include="particle_fragment.glsl">
       <Filter>shaders</Filter>
     </None>
+    <None Include="line_vertex.glsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="line_fragment.glsl">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Shader.h">

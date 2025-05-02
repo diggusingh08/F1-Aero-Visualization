@@ -14,8 +14,8 @@
 #include <windows.h>
 
 // Camera variables - adjusted for side view
-glm::vec3 cameraPos = glm::vec3(5.0f, 1.0f, 0.0f);  // Position camera on the side of the car
-glm::vec3 cameraFront = glm::vec3(-1.0f, 0.0f, 0.0f);  // Look toward negative X-axis
+glm::vec3 cameraPos = glm::vec3(5.0f, 1.0f, 0.0f);
+glm::vec3 cameraFront = glm::vec3(-1.0f, 0.0f, 0.0f);
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
 // Mouse variables
@@ -32,7 +32,7 @@ float lastFrame = 0.0f;
 
 // Controls
 bool showFlow = true;
-bool showCar = true;  // Toggle for car visibility
+bool showCar = true;
 
 // Function declarations
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -85,15 +85,14 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
 // Key callback for special actions
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_F && action == GLFW_PRESS) {
-        showFlow = !showFlow;  // Toggle flow visualization
+        showFlow = !showFlow;
         std::cout << "Flow visualization: " << (showFlow ? "ON" : "OFF") << std::endl;
     }
     if (key == GLFW_KEY_C && action == GLFW_PRESS) {
-        showCar = !showCar;    // Toggle car visibility
+        showCar = !showCar;
         std::cout << "Car visibility: " << (showCar ? "ON" : "OFF") << std::endl;
     }
     if (key == GLFW_KEY_R && action == GLFW_PRESS) {
-        // Reset camera position to new improved default
         cameraPos = glm::vec3(0.0f, 1.0f, 5.0f);
         yaw = -90.0f;
         pitch = 0.0f;
@@ -107,7 +106,6 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    // Increased camera speed for better navigation
     float cameraSpeed = 5.0f * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         cameraPos += cameraSpeed * cameraFront;
@@ -150,7 +148,7 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // 3. Create Window - increased window size for better viewing
+    // 3. Create Window
     GLFWwindow* window = glfwCreateWindow(1200, 800, "F1 Car Aero Visualization", NULL, NULL);
     if (!window) {
         std::cerr << "Failed to create GLFW window\n";
@@ -178,16 +176,15 @@ int main() {
 
     // 6. Load shaders
     try {
-        // Print shader loading attempt
         std::cout << "Loading shaders..." << std::endl;
 
         // Main model shader
         Shader ourShader("vertex.glsl", "fragment.glsl");
         std::cout << "Car shader loaded successfully!" << std::endl;
 
-        // Particle shader for flow visualization
-        Shader particleShader("particle_vertex.glsl", "particle_fragment.glsl");
-        std::cout << "Particle shader loaded successfully!" << std::endl;
+        // Line shader for flow visualization
+        Shader lineShader("line_vertex.glsl", "line_fragment.glsl");
+        std::cout << "Line shader loaded successfully!" << std::endl;
 
         // 7. Load model
         std::string modelPath = "C:/Users/hp/Desktop/C assgn/ComputerGraphicsProject/F1_Project_lib/F1_Project_lib/x64/Release/mcl35m_2.obj";
@@ -195,14 +192,13 @@ int main() {
         Model ourModel(modelPath);
         std::cout << "Model loaded successfully!" << std::endl;
 
-        // 8. Create flow visualization with adjusted parameters for visibility
-        // Increased car dimensions to match the new scale
-        float carLength = 5.7f;  // Keep this consistent with original
-        float carWidth = 2.0f;   // Keep width
-        float carHeight = 1.0f;  // Keep height
-        int numParticles = 10000; // Increased number of particles for better visualization
-        FlowVisualization flowVis(numParticles, carLength, carWidth, carHeight);
-        std::cout << "Flow visualization initialized with " << numParticles << " particles!" << std::endl;
+        // 8. Create flow lines visualization
+        float carLength = 5.7f;
+        float carWidth = 2.0f;
+        float carHeight = 1.0f;
+        int numLines = 500; // Number of flow lines
+        FlowLinesVisualization flowLinesVis(numLines, carLength, carWidth, carHeight);
+        std::cout << "Flow lines visualization initialized with " << numLines << " lines!" << std::endl;
 
         // 9. OpenGL settings
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
@@ -210,76 +206,53 @@ int main() {
 
         // 10. Main loop
         while (!glfwWindowShouldClose(window)) {
-            // Frame time calculation
             float currentFrame = glfwGetTime();
             deltaTime = currentFrame - lastFrame;
             lastFrame = currentFrame;
 
-            // Input handling
             processInput(window);
 
-            // Render
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            // Setup view/projection transformations
             glm::mat4 projection = glm::perspective(glm::radians(fov), 1200.0f / 800.0f, 0.1f, 100.0f);
             glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
-            // Draw car model if visibility is enabled
             if (showCar) {
                 ourShader.use();
 
-                // Setup lighting parameters
                 ourShader.setVec3("lightPos", glm::vec3(5.0f, 5.0f, 5.0f));
                 ourShader.setVec3("viewPos", cameraPos);
                 ourShader.setVec3("lightColor", glm::vec3(1.0f, 1.0f, 1.0f));
-                ourShader.setVec3("objectColor", glm::vec3(0.8f, 0.1f, 0.1f)); // Red tint for F1 car
+                ourShader.setVec3("objectColor", glm::vec3(0.8f, 0.1f, 0.1f));
 
                 ourShader.setMat4("projection", projection);
                 ourShader.setMat4("view", view);
 
-                // Create model matrix with proper positioning and scale
                 glm::mat4 model = glm::mat4(1.0f);
-
-                // Position the car at the origin with correct orientation
-// Position the car at the origin with new orientation
                 model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-                model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate to face sideways
-                // Significantly increased scale for better visibility
-                float scale = 1.0f; // Changed from 0.1f to 1.0f - 10x larger
+                model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+                float scale = 1.0f;
                 model = glm::scale(model, glm::vec3(scale));
 
                 ourShader.setMat4("model", model);
-
-                // Debugging: print matrix info only occasionally
-                static float lastPrintTime = 0.0f;
-                if (currentFrame - lastPrintTime > 5.0f) { // Print every 5 seconds
-                    std::cout << "Drawing car with model scale: " << scale << std::endl;
-                    lastPrintTime = currentFrame;
-                }
-
                 ourModel.Draw(ourShader);
             }
 
-            // Update and draw flow visualization if enabled
             if (showFlow) {
-                flowVis.update(deltaTime);
-                flowVis.draw(particleShader, view, projection);
+                flowLinesVis.update(deltaTime);
+                flowLinesVis.draw(lineShader, view, projection);
             }
 
-            // Swap buffers and poll events
             glfwSwapBuffers(window);
             glfwPollEvents();
         }
 
-        // Cleanup flow visualization
-        flowVis.cleanup();
+        flowLinesVis.cleanup();
     }
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
     }
 
-    // 11. Cleanup
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;

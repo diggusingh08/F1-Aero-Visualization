@@ -26,6 +26,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="fragment.glsl" />
+    <None Include="line_fragment.glsl" />
+    <None Include="line_vertex.glsl" />
     <None Include="particle_fragment.glsl" />
     <None Include="particle_vertex.glsl" />
     <None Include="vertex.glsl" />
