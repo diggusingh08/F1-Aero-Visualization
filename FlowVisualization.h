@@ -1,4 +1,4 @@
-#ifndef FLOW_VISUALIZATION_H
+﻿#ifndef FLOW_VISUALIZATION_H
 #define FLOW_VISUALIZATION_H
 
 #include <glad/glad.h>
@@ -19,7 +19,7 @@ struct FlowLine {
     glm::vec3 direction;             // Main flow direction
     int maxPoints;                   // Maximum number of points in line
     float pressure;                  // Pressure value for coloring
-    float temperature;               // Temperature value for coloring
+    float velocity;                  // Velocity magnitude
     int zoneType;                    // The emission zone this flow line came from
 };
 
@@ -34,6 +34,8 @@ public:
         m_carHeight = carHeight;
         m_pointsPerLine = 50;        // Number of points per flow line
         m_totalPoints = m_numLines * m_pointsPerLine;
+        m_minDistance = 0.25f;       // Minimum distance between streamlines
+        m_adaptiveDensity = true;    // Enable adaptive density
 
         // Initialize flow line segments
         initFlowLines();
@@ -66,8 +68,9 @@ public:
                     flowLine.colors.pop_back();
                 }
 
-                // Calculate new head position by advancing from current head
-                glm::vec3 newHeadPos = flowLine.points.front() + applyAerodynamics(flowLine, distanceToAdvance);
+                // Calculate new head position with aerodynamic effects
+                glm::vec3 displacement = applyAerodynamics(flowLine, distanceToAdvance);
+                glm::vec3 newHeadPos = flowLine.points.front() + displacement;
 
                 // Insert new head at the beginning
                 flowLine.points.insert(flowLine.points.begin(), newHeadPos);
@@ -101,7 +104,11 @@ public:
 
         // Enable line smoothing and set line width
         glEnable(GL_LINE_SMOOTH);
-        glLineWidth(1.5f);
+        glLineWidth(1.2f);  // Thinner lines for less congestion
+
+        // Enable alpha blending for better visualization
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         // Draw lines instead of points
         int offset = 0;
@@ -121,6 +128,16 @@ public:
         glDeleteVertexArrays(1, &m_VAO);
         glDeleteBuffers(1, &m_VBO);
         glDeleteBuffers(1, &m_colorVBO);
+    }
+
+    // Set adaptive density flag
+    void setAdaptiveDensity(bool enable) {
+        m_adaptiveDensity = enable;
+    }
+
+    // Set minimum distance between streamlines
+    void setDensity(float minDistance) {
+        m_minDistance = minDistance;
     }
 
 private:
@@ -154,133 +171,252 @@ private:
         float floorWidth = m_carWidth * 0.8f;
         float floorHeight = 0.05f;
 
-        for (int i = 0; i < m_numLines; i++) {
+        // Determine how many lines to allocate to each zone
+        int frontWingLines = m_numLines * 0.3f;  // 30% for front wing
+        int topLines = m_numLines * 0.2f;        // 20% for top
+        int sideLines = m_numLines * 0.15f;      // 15% for sides
+        int rearWingLines = m_numLines * 0.15f;  // 15% for rear wing
+        int floorLines = m_numLines * 0.2f;      // 20% for floor/diffuser
+
+        int lineCount = 0;
+        std::vector<glm::vec3> existingPositions;
+
+        // Add front wing lines
+        for (int i = 0; i < frontWingLines && lineCount < m_numLines; i++) {
             FlowLine flowLine;
             flowLine.maxPoints = m_pointsPerLine;
+            flowLine.zoneType = 0;  // Front wing zone
 
-            // Choose a random emission zone
-            int zone = i % 5;  // Now including the floor zone
-            flowLine.zoneType = zone;
-
-            glm::vec3 position;
-            glm::vec3 direction;
-
-            switch (zone) {
-            case 0: // Front wing
+            // Try several positions until we find one with proper spacing
+            bool positionFound = false;
+            for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
+                glm::vec3 position;
                 position.x = generateRandomFloat(-frontWingWidth / 2, frontWingWidth / 2);
                 position.y = generateRandomFloat(0.05f, frontWingHeight);
                 position.z = frontWingZ - generateRandomFloat(0.0f, 0.2f);
-                direction = glm::vec3(0.0f, 0.0f, 1.0f); // Flow from front to back
-                flowLine.pressure = generateRandomFloat(0.7f, 1.0f);  // Higher pressure in front
-                flowLine.temperature = generateRandomFloat(0.4f, 0.6f);
-                flowLine.speed = generateRandomFloat(5.0f, 8.0f);
-                break;
 
-            case 1: // Top of car
+                // Check distance to existing positions
+                if (checkMinimumDistance(position, existingPositions, m_minDistance * 0.8f)) {
+                    flowLine.initialPosition = position;
+                    flowLine.direction = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));
+                    flowLine.pressure = generateRandomFloat(0.7f, 1.0f);  // Higher pressure in front
+                    flowLine.velocity = generateRandomFloat(5.0f, 8.0f);
+                    flowLine.speed = flowLine.velocity;
+                    flowLine.initialLife = generateRandomFloat(3.0f, 5.0f);
+                    flowLine.life = flowLine.initialLife;
+
+                    // Initialize with starting point
+                    flowLine.points.push_back(position);
+                    flowLine.colors.push_back(calculateFlowColor(1.0f, 0.0f, flowLine));
+
+                    m_flowLines.push_back(flowLine);
+                    existingPositions.push_back(position);
+                    positionFound = true;
+                    lineCount++;
+                }
+            }
+        }
+
+        // Add top lines
+        for (int i = 0; i < topLines && lineCount < m_numLines; i++) {
+            FlowLine flowLine;
+            flowLine.maxPoints = m_pointsPerLine;
+            flowLine.zoneType = 1;  // Top zone
+
+            bool positionFound = false;
+            for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
+                glm::vec3 position;
                 position.x = generateRandomFloat(-topWidth / 2, topWidth / 2);
                 position.y = topHeight + generateRandomFloat(0.0f, 0.2f);
                 position.z = topZ + generateRandomFloat(-m_carLength * 0.3f, m_carLength * 0.3f);
-                direction = glm::vec3(0.0f, 0.0f, 1.0f); // Flow from front to back
-                flowLine.pressure = generateRandomFloat(0.3f, 0.6f);  // Medium pressure on top
-                flowLine.temperature = generateRandomFloat(0.5f, 0.7f);
-                flowLine.speed = generateRandomFloat(7.0f, 10.0f);
-                break;
 
-            case 2: // Side pods
+                if (checkMinimumDistance(position, existingPositions, m_minDistance)) {
+                    flowLine.initialPosition = position;
+                    flowLine.direction = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));
+                    flowLine.pressure = generateRandomFloat(0.3f, 0.6f);  // Medium pressure on top
+                    flowLine.velocity = generateRandomFloat(7.0f, 10.0f);
+                    flowLine.speed = flowLine.velocity;
+                    flowLine.initialLife = generateRandomFloat(3.0f, 5.0f);
+                    flowLine.life = flowLine.initialLife;
+
+                    flowLine.points.push_back(position);
+                    flowLine.colors.push_back(calculateFlowColor(1.0f, 0.0f, flowLine));
+
+                    m_flowLines.push_back(flowLine);
+                    existingPositions.push_back(position);
+                    positionFound = true;
+                    lineCount++;
+                }
+            }
+        }
+
+        // Add side lines
+        for (int i = 0; i < sideLines && lineCount < m_numLines; i++) {
+            FlowLine flowLine;
+            flowLine.maxPoints = m_pointsPerLine;
+            flowLine.zoneType = 2;  // Side zone
+
+            bool positionFound = false;
+            for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
+                glm::vec3 position;
                 position.x = (i % 2 == 0) ? sideWidth / 2 : -sideWidth / 2; // Left or right
                 position.y = generateRandomFloat(0.2f, sideHeight);
                 position.z = sideZ + generateRandomFloat(-m_carLength * 0.2f, m_carLength * 0.2f);
-                direction = glm::vec3((i % 2 == 0) ? 0.2f : -0.2f, 0.0f, 1.0f); // Flow outward and back
-                flowLine.pressure = generateRandomFloat(0.4f, 0.7f);
-                flowLine.temperature = generateRandomFloat(0.6f, 0.8f); // Higher temp near sidepods (radiators)
-                flowLine.speed = generateRandomFloat(6.0f, 9.0f);
-                break;
 
-            case 3: // Rear wing
+                if (checkMinimumDistance(position, existingPositions, m_minDistance)) {
+                    flowLine.initialPosition = position;
+                    flowLine.direction = glm::normalize(glm::vec3((i % 2 == 0) ? 0.2f : -0.2f, 0.0f, 1.0f));
+                    flowLine.pressure = generateRandomFloat(0.4f, 0.7f);
+                    flowLine.velocity = generateRandomFloat(6.0f, 9.0f);
+                    flowLine.speed = flowLine.velocity;
+                    flowLine.initialLife = generateRandomFloat(3.0f, 5.0f);
+                    flowLine.life = flowLine.initialLife;
+
+                    flowLine.points.push_back(position);
+                    flowLine.colors.push_back(calculateFlowColor(1.0f, 0.0f, flowLine));
+
+                    m_flowLines.push_back(flowLine);
+                    existingPositions.push_back(position);
+                    positionFound = true;
+                    lineCount++;
+                }
+            }
+        }
+
+        // Add rear wing lines
+        for (int i = 0; i < rearWingLines && lineCount < m_numLines; i++) {
+            FlowLine flowLine;
+            flowLine.maxPoints = m_pointsPerLine;
+            flowLine.zoneType = 3;  // Rear wing zone
+
+            bool positionFound = false;
+            for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
+                glm::vec3 position;
                 position.x = generateRandomFloat(-rearWingWidth / 2, rearWingWidth / 2);
                 position.y = generateRandomFloat(rearWingHeight * 0.5f, rearWingHeight);
                 position.z = rearWingZ;
-                direction = glm::vec3(0.0f, 0.1f, 1.0f); // Flow upward and back
-                flowLine.pressure = generateRandomFloat(0.1f, 0.4f);  // Lower pressure behind car
-                flowLine.temperature = generateRandomFloat(0.3f, 0.5f);
-                flowLine.speed = generateRandomFloat(4.0f, 6.0f);
-                break;
 
-            case 4: // Floor/diffuser
+                if (checkMinimumDistance(position, existingPositions, m_minDistance)) {
+                    flowLine.initialPosition = position;
+                    flowLine.direction = glm::normalize(glm::vec3(0.0f, 0.1f, 1.0f));
+                    flowLine.pressure = generateRandomFloat(0.1f, 0.4f);  // Lower pressure behind car
+                    flowLine.velocity = generateRandomFloat(4.0f, 6.0f);
+                    flowLine.speed = flowLine.velocity;
+                    flowLine.initialLife = generateRandomFloat(3.0f, 5.0f);
+                    flowLine.life = flowLine.initialLife;
+
+                    flowLine.points.push_back(position);
+                    flowLine.colors.push_back(calculateFlowColor(1.0f, 0.0f, flowLine));
+
+                    m_flowLines.push_back(flowLine);
+                    existingPositions.push_back(position);
+                    positionFound = true;
+                    lineCount++;
+                }
+            }
+        }
+
+        // Add floor/diffuser lines
+        for (int i = 0; i < floorLines && lineCount < m_numLines; i++) {
+            FlowLine flowLine;
+            flowLine.maxPoints = m_pointsPerLine;
+            flowLine.zoneType = 4;  // Floor zone
+
+            bool positionFound = false;
+            for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
+                glm::vec3 position;
                 position.x = generateRandomFloat(-floorWidth / 2, floorWidth / 2);
                 position.y = floorHeight;
                 position.z = floorZ + generateRandomFloat(-m_carLength * 0.3f, m_carLength * 0.3f);
-                direction = glm::vec3(0.0f, -0.1f, 1.0f); // Flow downward and back (ground effect)
-                flowLine.pressure = generateRandomFloat(0.1f, 0.3f);  // Low pressure under floor
-                flowLine.temperature = generateRandomFloat(0.2f, 0.4f);
-                flowLine.speed = generateRandomFloat(8.0f, 12.0f);  // Faster flow under floor
-                break;
+
+                if (checkMinimumDistance(position, existingPositions, m_minDistance * 0.7f)) {  // Allow closer spacing under floor
+                    flowLine.initialPosition = position;
+                    flowLine.direction = glm::normalize(glm::vec3(0.0f, -0.05f, 1.0f));
+                    flowLine.pressure = generateRandomFloat(0.1f, 0.3f);  // Low pressure under floor
+                    flowLine.velocity = generateRandomFloat(8.0f, 12.0f);  // Faster flow under floor
+                    flowLine.speed = flowLine.velocity;
+                    flowLine.initialLife = generateRandomFloat(3.0f, 5.0f);
+                    flowLine.life = flowLine.initialLife;
+
+                    flowLine.points.push_back(position);
+                    flowLine.colors.push_back(calculateFlowColor(1.0f, 0.0f, flowLine));
+
+                    m_flowLines.push_back(flowLine);
+                    existingPositions.push_back(position);
+                    positionFound = true;
+                    lineCount++;
+                }
             }
-
-            flowLine.initialPosition = position;
-            flowLine.direction = glm::normalize(direction);
-
-            // Initial life value
-            flowLine.initialLife = generateRandomFloat(3.0f, 6.0f);
-            flowLine.life = flowLine.initialLife;
-
-            // Initialize with starting point
-            flowLine.points.push_back(position);
-            flowLine.colors.push_back(calculateFlowColor(1.0f, 0.0f, flowLine));
-
-            m_flowLines.push_back(flowLine);
         }
     }
 
+    // Check if a position maintains minimum distance from existing positions
+    bool checkMinimumDistance(const glm::vec3& position, const std::vector<glm::vec3>& existingPositions, float minDistance) {
+        for (const auto& existingPos : existingPositions) {
+            if (glm::length(position - existingPos) < minDistance) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // Apply aerodynamic effects to flow direction
-    glm::vec3 applyAerodynamics(FlowLine& flowLine, float distanceToAdvance) {
+    glm::vec3 applyAerodynamics(const FlowLine& flowLine, float distanceToAdvance) {
         glm::vec3 currentHead = flowLine.points.front();
-        glm::vec3 displacement = flowLine.direction * distanceToAdvance;
+        glm::vec3 baseDirection = flowLine.direction;
 
-        // Base turbulence
-        float turbulenceStrength = 0.03f;
-        displacement.x += generateRandomFloat(-turbulenceStrength, turbulenceStrength);
-        displacement.y += generateRandomFloat(-turbulenceStrength, turbulenceStrength);
-        displacement.z += generateRandomFloat(-turbulenceStrength, turbulenceStrength);
+        // Base displacement
+        glm::vec3 displacement = baseDirection * distanceToAdvance;
 
-        // Apply vortex effects at wing tips
-        if (flowLine.zoneType == 0) { // Front wing
-            float distFromWingTip = std::min(
-                std::abs(currentHead.x - m_carWidth * 0.6f),
-                std::abs(currentHead.x + m_carWidth * 0.6f)
-            );
+        // 1. Wake effect - streamlines should curve behind the car
+        float wakeStrength = 0.0f;
+        if (currentHead.z > m_carLength * 0.3f) {  // Behind car
+            float distanceFromCenterline = std::abs(currentHead.x);
+            wakeStrength = 0.05f * std::exp(-(currentHead.z - m_carLength * 0.3f) / 2.0f);
 
-            if (distFromWingTip < 0.3f) {
-                // Create wing tip vortex
-                float vortexStrength = 0.2f * (1.0f - distFromWingTip / 0.3f);
-                displacement.y += vortexStrength * std::sin(flowLine.life * 5.0f);
-                displacement.x += vortexStrength * std::cos(flowLine.life * 5.0f) *
-                    (currentHead.x > 0 ? -1.0f : 1.0f); // Direction based on which wing tip
+            // Inward curvature in wake
+            if (currentHead.x > 0) {
+                displacement.x -= wakeStrength;
             }
-        }
-
-        // Wake turbulence behind the car
-        if (currentHead.z > m_carLength * 0.5f) {
-            float wakeStrength = 0.1f * std::exp(-(currentHead.z - m_carLength * 0.5f));
-            displacement.x += generateRandomFloat(-wakeStrength, wakeStrength);
-            displacement.y += generateRandomFloat(-wakeStrength, wakeStrength);
-        }
-
-        // DRS effect when open
-        if (flowLine.zoneType == 3) { // Rear wing
-            // Simulate DRS being open - less upwash
-            displacement.y *= 0.7f;
-            displacement.z *= 1.3f; // Faster flow with less drag
-        }
-
-        // Ground effect for floor/diffuser
-        if (flowLine.zoneType == 4) {
-            // Stronger downforce as flow accelerates through venturi tunnels
-            if (currentHead.z > -m_carLength * 0.3f && currentHead.z < m_carLength * 0.3f) {
-                displacement.y -= 0.05f;
-                displacement.z *= 1.2f; // Accelerated flow
+            else {
+                displacement.x += wakeStrength;
             }
+
+            // Upwash in wake
+            displacement.y += wakeStrength * 0.5f;
         }
+
+        // 2. Ground effect - flow accelerates under the car
+        if (currentHead.y < m_carHeight * 0.2f &&
+            std::abs(currentHead.x) < m_carWidth * 0.4f &&
+            std::abs(currentHead.z) < m_carLength * 0.4f) {
+
+            displacement.z *= 1.2f;  // Accelerate flow under car
+            displacement.y *= 0.8f;  // Keep flow close to ground
+        }
+
+        // 3. Wing vortices - generate tip vortices from wings
+        float wingTipDistance = std::min(
+            std::abs(currentHead.x - m_carWidth * 0.4f),
+            std::abs(currentHead.x + m_carWidth * 0.4f)
+        );
+
+        if (wingTipDistance < 0.2f &&
+            (std::abs(currentHead.z - m_carLength * 0.4f) < 0.3f ||   // Rear wing
+                std::abs(currentHead.z + m_carLength * 0.4f) < 0.3f)) {  // Front wing
+
+            float vortexStrength = 0.08f * (1.0f - wingTipDistance / 0.2f);
+            float angle = currentHead.z * 10.0f;  // Rotating angle for vortex
+
+            displacement.x += vortexStrength * std::sin(angle);
+            displacement.y += vortexStrength * std::cos(angle);
+        }
+
+        // 4. Add small turbulence - but significantly less than before
+        float turbulence = 0.01f;  // Reduced turbulence for less chaotic flow
+        displacement.x += generateRandomFloat(-turbulence, turbulence);
+        displacement.y += generateRandomFloat(-turbulence, turbulence);
+        displacement.z += generateRandomFloat(-turbulence, turbulence);
 
         return displacement;
     }
@@ -318,43 +454,34 @@ private:
 
     // Calculate color based on flow properties (pressure, velocity, position)
     glm::vec3 calculateFlowColor(float lifeRatio, float pointPosition, const FlowLine& flowLine) {
-        // Base the color on a combination of factors:
-        // 1. Pressure (red = high pressure, blue = low pressure)
-        // 2. Position along flow line (alpha fade out)
-        // 3. Flow speed
+        // Calculate velocity magnitude effect (0-1 range)
+        float velocityFactor = glm::clamp(flowLine.velocity / 12.0f, 0.0f, 1.0f);
 
-        // Use pressure to determine the base color
+        // Professional CFD color scheme (blue→green→yellow→red)
         glm::vec3 color;
 
-        // Use a heat map style coloring similar to professional CFD
-        float value = flowLine.pressure; // Range 0.0 - 1.0
-
-        // Red to Yellow to Green to Blue gradient
-        if (value < 0.25f) {
-            // Blue to Green (0.0 - 0.25)
-            float t = value / 0.25f;
-            color = glm::vec3(0.0f, t, 1.0f - t * 0.5f);
+        if (velocityFactor < 0.25f) {
+            // Blue to Cyan
+            float t = velocityFactor / 0.25f;
+            color = glm::vec3(0.0f, t, 1.0f);
         }
-        else if (value < 0.5f) {
-            // Green to Yellow (0.25 - 0.5)
-            float t = (value - 0.25f) / 0.25f;
-            color = glm::vec3(t, 1.0f, 0.5f - t * 0.5f);
+        else if (velocityFactor < 0.5f) {
+            // Cyan to Green
+            float t = (velocityFactor - 0.25f) / 0.25f;
+            color = glm::vec3(0.0f, 1.0f, 1.0f - t);
         }
-        else if (value < 0.75f) {
-            // Yellow to Orange (0.5 - 0.75)
-            float t = (value - 0.5f) / 0.25f;
-            color = glm::vec3(1.0f, 1.0f - t * 0.5f, 0.0f);
+        else if (velocityFactor < 0.75f) {
+            // Green to Yellow
+            float t = (velocityFactor - 0.5f) / 0.25f;
+            color = glm::vec3(t, 1.0f, 0.0f);
         }
         else {
-            // Orange to Red (0.75 - 1.0)
-            float t = (value - 0.75f) / 0.25f;
-            color = glm::vec3(1.0f, 0.5f - t * 0.5f, 0.0f);
+            // Yellow to Red
+            float t = (velocityFactor - 0.75f) / 0.25f;
+            color = glm::vec3(1.0f, 1.0f - t, 0.0f);
         }
 
-        // Adjust color based on temperature (more intense colors for higher temps)
-        color = glm::mix(color, glm::vec3(1.0f, 0.5f, 0.0f), flowLine.temperature * 0.3f);
-
-        // Fade out based on life ratio
+        // Apply fade-out effect based on life ratio
         color *= lifeRatio;
 
         return color;
@@ -417,6 +544,8 @@ private:
     float m_carLength;
     float m_carWidth;
     float m_carHeight;
+    float m_minDistance;       // Minimum distance between streamlines
+    bool m_adaptiveDensity;    // Enable adaptive density based on importance
 };
 
 #endif // FLOW_VISUALIZATION_H

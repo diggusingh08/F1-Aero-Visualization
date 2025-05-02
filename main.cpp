@@ -37,11 +37,12 @@ bool showFlow = true;
 bool showCar = true;
 bool usePressureMap = true;
 bool simulateDRS = false;
-int flowDensity = 400; // Number of flow lines
+int flowDensity = 350; // Reduced from 400 to avoid congestion
+float streamlineDensity = 0.20f; // Controls spacing between streamlines
+bool enableAdaptiveDensity = true;
 
 // Simulation variables
 float carSpeed = 250.0f; // km/h - affects flow behavior
-float airDensity = 1.2f; // kg/m^3
 bool pauseSimulation = false;
 
 // Rendering variables
@@ -151,15 +152,24 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         if (carSpeed < 0.0f) carSpeed = 0.0f;
         std::cout << "Car speed: " << carSpeed << " km/h" << std::endl;
     }
-    if (key == GLFW_KEY_KP_ADD && action == GLFW_PRESS) {
-        flowDensity += 50;
-        if (flowDensity > 1000) flowDensity = 1000;
-        std::cout << "Flow density: " << flowDensity << " lines" << std::endl;
+    if (key == GLFW_KEY_KP_ADD && action == GLFW_PRESS || key == GLFW_KEY_EQUAL && action == GLFW_PRESS) {
+        streamlineDensity -= 0.05f;
+        if (streamlineDensity < 0.1f) streamlineDensity = 0.1f;
+        std::cout << "Streamline density increased" << std::endl;
     }
-    if (key == GLFW_KEY_KP_SUBTRACT && action == GLFW_PRESS) {
-        flowDensity -= 50;
-        if (flowDensity < 100) flowDensity = 100;
-        std::cout << "Flow density: " << flowDensity << " lines" << std::endl;
+    if (key == GLFW_KEY_KP_SUBTRACT && action == GLFW_PRESS || key == GLFW_KEY_MINUS && action == GLFW_PRESS) {
+        streamlineDensity += 0.05f;
+        if (streamlineDensity > 1.0f) streamlineDensity = 1.0f;
+        std::cout << "Streamline density decreased" << std::endl;
+    }
+    if (key == GLFW_KEY_A && action == GLFW_PRESS) {
+        enableAdaptiveDensity = !enableAdaptiveDensity;
+        std::cout << "Adaptive density: " << (enableAdaptiveDensity ? "ON" : "OFF") << std::endl;
+    }
+    if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+        // Reset camera to current preset
+        setCurrentCameraPreset();
+        std::cout << "Camera reset to " << cameraPresets[currentPreset].name << std::endl;
     }
     if (key == GLFW_KEY_I && action == GLFW_PRESS) {
         printSimulationInfo();
@@ -183,9 +193,9 @@ void setCurrentCameraPreset() {
 void printSimulationInfo() {
     std::cout << "\n--- SIMULATION INFORMATION ---" << std::endl;
     std::cout << "Car speed: " << carSpeed << " km/h" << std::endl;
-    std::cout << "Air density: " << airDensity << " kg/m³" << std::endl;
     std::cout << "Flow visualization: " << (showFlow ? "ON" : "OFF") << std::endl;
-    std::cout << "Flow density: " << flowDensity << " lines" << std::endl;
+    std::cout << "Streamline density: " << (1.0f / streamlineDensity) << std::endl;
+    std::cout << "Adaptive density: " << (enableAdaptiveDensity ? "ON" : "OFF") << std::endl;
     std::cout << "Pressure mapping: " << (usePressureMap ? "ON" : "OFF") << std::endl;
     std::cout << "DRS: " << (simulateDRS ? "OPEN" : "CLOSED") << std::endl;
     std::cout << "Camera: " << cameraPresets[currentPreset].name << std::endl;
@@ -283,9 +293,11 @@ int main() {
     std::cout << "  P: Toggle pressure/velocity map" << std::endl;
     std::cout << "  D: Toggle DRS (open/closed)" << std::endl;
     std::cout << "  V: Cycle camera views" << std::endl;
+    std::cout << "  R: Reset camera to preset" << std::endl;
     std::cout << "  SPACE: Pause/resume simulation" << std::endl;
     std::cout << "  UP/DOWN: Increase/decrease car speed" << std::endl;
     std::cout << "  +/-: Increase/decrease flow density" << std::endl;
+    std::cout << "  A: Toggle adaptive density" << std::endl;
     std::cout << "  I: Show simulation information" << std::endl;
     std::cout << "  ESC: Exit" << std::endl;
     std::cout << "-------------------------------------\n" << std::endl;
@@ -313,6 +325,8 @@ int main() {
         float carWidth = 2.0f;
         float carHeight = 1.0f;
         FlowLinesVisualization flowLinesVis(flowDensity, carLength, carWidth, carHeight);
+        flowLinesVis.setDensity(streamlineDensity);
+        flowLinesVis.setAdaptiveDensity(enableAdaptiveDensity);
         std::cout << "Flow lines visualization initialized with " << flowDensity << " lines!" << std::endl;
 
         // 10. OpenGL settings
