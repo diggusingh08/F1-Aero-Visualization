@@ -27,7 +27,7 @@ public:
     }
 
     // 4. Add a new method to initialize a more even distribution of flow lines 
-    // Initialize flow lines in a grid pattern on the front wing
+        // Initialize flow lines in a grid pattern on the front wing
     void initFlowLinesGrid() {
         // Clear any existing flow lines
         flowLines.clear();
@@ -41,10 +41,14 @@ public:
         int gridWidth = static_cast<int>(std::sqrt(numLines));
         int gridHeight = numLines / gridWidth;
 
-        // Front wing parameters
-        float frontWingZ = -carLength * 0.45f;
+        // Front wing parameters - Adjusted to match car orientation
+        // Since the car is rotated 90° around Y-axis in main.cpp, we need to adjust our coordinates:
+        // Original car front is along negative Z, but after rotation it's along negative X
+        // The car is translated to carLength * -0.30f in Z, so we adjust accordingly
+        float frontWingX = -carLength * 0.45f;  // Car front is now along X-axis after rotation
         float frontWingY = carHeight * 0.2f;
         float frontWingWidth = carWidth * 0.9f;
+        float carZOffset = carLength * -0.30f;  // Match car translation from main.cpp
 
         // Create flow lines in a grid pattern
         int lineIndex = 0;
@@ -55,19 +59,21 @@ public:
                 float normalizedY = static_cast<float>(j) / (gridHeight - 1);
 
                 // Map to actual position
-                float x = (normalizedX * 2.0f - 1.0f) * (frontWingWidth * 0.45f);
+                // After 90° Y-rotation: old z becomes -x, old x becomes z
+                float z = (normalizedX * 2.0f - 1.0f) * (frontWingWidth * 0.45f);
                 float y = normalizedY * frontWingY + 0.05f;
+                float x = frontWingX;
 
                 // Add small random variation
                 std::uniform_real_distribution<float> varX(-0.05f, 0.05f);
                 std::uniform_real_distribution<float> varY(-0.03f, 0.03f);
                 std::uniform_real_distribution<float> varZ(-0.05f, 0.05f);
 
-                // Create starting point at front wing
+                // Create starting point at front wing - coordinates reflect car's 90° rotation
                 glm::vec3 startPoint = glm::vec3(
-                    x + varX(gen),
-                    y + varY(gen),
-                    frontWingZ + varZ(gen)
+                    x + varX(gen),                    // X is now car's front-back axis
+                    y + varY(gen),                    // Y remains height
+                    z + varZ(gen) + carZOffset        // Z is now car's left-right axis plus offset
                 );
 
                 // Initialize the flow line
@@ -90,15 +96,15 @@ public:
         }
 
         // Fill any remaining lines with random positions
-        std::uniform_real_distribution<float> xDist(-frontWingWidth * 0.45f, frontWingWidth * 0.45f);
+        std::uniform_real_distribution<float> zDist(-frontWingWidth * 0.45f, frontWingWidth * 0.45f);
         std::uniform_real_distribution<float> yDist(0.05f, frontWingY + 0.1f);
-        std::uniform_real_distribution<float> zDist(-0.05f, 0.05f);
+        std::uniform_real_distribution<float> xDist(-0.05f, 0.05f);
 
         for (; lineIndex < numLines; lineIndex++) {
             glm::vec3 startPoint = glm::vec3(
-                xDist(gen),
-                yDist(gen),
-                frontWingZ + zDist(gen)
+                frontWingX + xDist(gen),                // X is now the front-back axis
+                yDist(gen),                             // Y is still height
+                zDist(gen) + carZOffset                 // Z is now the left-right axis plus offset
             );
 
             // Initialize line
