@@ -45,6 +45,13 @@ bool enableAdaptiveDensity = true;
 float carSpeed = 250.0f; // km/h - affects flow behavior
 bool pauseSimulation = false;
 
+// Car movement variables
+float carPosition = 0.0f; // Z position of the car
+float movementSpeed = 0.0f; // Current movement speed
+float maxMovementSpeed = 10.0f; // Maximum movement speed
+bool carMoving = false; // Is the car currently moving?
+bool cameraMoveWithCar = false; // Should camera follow the car?
+
 // Rendering variables
 int windowWidth = 1200;
 int windowHeight = 800;
@@ -75,6 +82,7 @@ void processInput(GLFWwindow* window);
 void printCurrentDirectory();
 void setCurrentCameraPreset();
 void printSimulationInfo();
+void updateCarMovement(float deltaTime);
 
 // Mouse callback function
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
@@ -174,6 +182,53 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     if (key == GLFW_KEY_I && action == GLFW_PRESS) {
         printSimulationInfo();
     }
+
+    // Car movement controls
+    if (key == GLFW_KEY_M && action == GLFW_PRESS) {
+        carMoving = !carMoving;
+        std::cout << "Car movement: " << (carMoving ? "ON" : "OFF") << std::endl;
+
+        // Reset movement speed if stopping
+        if (!carMoving) {
+            movementSpeed = 0.0f;
+        }
+        else {
+            // Start moving forward if not already moving
+            if (movementSpeed == 0.0f) {
+                movementSpeed = maxMovementSpeed * 0.3f;
+            }
+        }
+    }
+
+    // Forward/backward movement
+    if (key == GLFW_KEY_J && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+        // Backward movement
+        if (movementSpeed > -maxMovementSpeed) {
+            movementSpeed -= 0.5f;
+        }
+        carMoving = true;
+        std::cout << "Car movement speed: " << movementSpeed << std::endl;
+    }
+    if (key == GLFW_KEY_K && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+        // Forward movement
+        if (movementSpeed < maxMovementSpeed) {
+            movementSpeed += 0.5f;
+        }
+        carMoving = true;
+        std::cout << "Car movement speed: " << movementSpeed << std::endl;
+    }
+    if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+        // Stop movement
+        movementSpeed = 0.0f;
+        carMoving = false;
+        std::cout << "Car stopped" << std::endl;
+    }
+
+    // Toggle camera following car
+    if (key == GLFW_KEY_T && action == GLFW_PRESS) {
+        cameraMoveWithCar = !cameraMoveWithCar;
+        std::cout << "Camera follows car: " << (cameraMoveWithCar ? "ON" : "OFF") << std::endl;
+    }
 }
 
 void setCurrentCameraPreset() {
@@ -193,6 +248,10 @@ void setCurrentCameraPreset() {
 void printSimulationInfo() {
     std::cout << "\n--- SIMULATION INFORMATION ---" << std::endl;
     std::cout << "Car speed: " << carSpeed << " km/h" << std::endl;
+    std::cout << "Car movement: " << (carMoving ? "ON" : "OFF") << std::endl;
+    std::cout << "Movement speed: " << movementSpeed << std::endl;
+    std::cout << "Car position: " << carPosition << std::endl;
+    std::cout << "Camera follows car: " << (cameraMoveWithCar ? "ON" : "OFF") << std::endl;
     std::cout << "Flow visualization: " << (showFlow ? "ON" : "OFF") << std::endl;
     std::cout << "Streamline density: " << (1.0f / streamlineDensity) << std::endl;
     std::cout << "Adaptive density: " << (enableAdaptiveDensity ? "ON" : "OFF") << std::endl;
@@ -201,6 +260,21 @@ void printSimulationInfo() {
     std::cout << "Camera: " << cameraPresets[currentPreset].name << std::endl;
     std::cout << "Simulation: " << (pauseSimulation ? "PAUSED" : "RUNNING") << std::endl;
     std::cout << "-----------------------------\n" << std::endl;
+}
+
+// Update car movement
+void updateCarMovement(float deltaTime) {
+    if (carMoving && !pauseSimulation) {
+        // Update car position based on movement speed
+        carPosition += movementSpeed * deltaTime;
+
+        // Update camera position if following car
+        if (cameraMoveWithCar) {
+            // Offset camera position by car position in Z-axis
+            glm::vec3 originalPos = cameraPresets[currentPreset].position;
+            cameraPos.z = originalPos.z + carPosition;
+        }
+    }
 }
 
 // Process keyboard input for camera movement
@@ -299,6 +373,10 @@ int main() {
     std::cout << "  +/-: Increase/decrease flow density" << std::endl;
     std::cout << "  A: Toggle adaptive density" << std::endl;
     std::cout << "  I: Show simulation information" << std::endl;
+    std::cout << "  M: Toggle car movement" << std::endl;
+    std::cout << "  J/K: Decrease/increase movement speed" << std::endl;
+    std::cout << "  L: Stop car movement" << std::endl;
+    std::cout << "  T: Toggle camera following car" << std::endl;
     std::cout << "  ESC: Exit" << std::endl;
     std::cout << "-------------------------------------\n" << std::endl;
 
@@ -357,6 +435,9 @@ int main() {
 
             processInput(window);
 
+            // Update car movement
+            updateCarMovement(deltaTime);
+
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             glm::mat4 projection = glm::perspective(glm::radians(fov), static_cast<float>(windowWidth) / windowHeight, 0.1f, 100.0f);
@@ -375,9 +456,9 @@ int main() {
                 ourShader.setMat4("projection", projection);
                 ourShader.setMat4("view", view);
 
-                // Center the car properly
+                // Center the car properly and apply position offset
                 glm::mat4 model = glm::mat4(1.0f);
-                model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
+                model = glm::translate(model, glm::vec3(0.0f, 0.5f, carPosition));
                 // Rotate to face forward
                 model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
                 float scale = 1.0f;
@@ -388,6 +469,7 @@ int main() {
             }
 
             if (showFlow && !pauseSimulation) {
+                // Update flow lines, passing car position for relative flow calculation
                 flowLinesVis.update(deltaTime);
                 flowLinesVis.draw(lineShader, view, projection);
             }
