@@ -23,6 +23,9 @@ struct FlowLine {
     int zoneType;                    // The emission zone this flow line came from
     glm::vec3 initialOffset;         // Initial offset from car's reference position
     float lastCarPosition;           // Last known car position for this flow line
+    bool isVortex;                   // Flag to indicate if this is a vortex flow line
+    float vortexStrength;            // Strength of the vortex rotation (if isVortex is true)
+    float vortexPhase;               // Phase of the vortex rotation (if isVortex is true)
 };
 
 // Main class for flow line visualization
@@ -34,15 +37,17 @@ public:
         m_carLength = carLength;
         m_carWidth = carWidth;
         m_carHeight = carHeight;
-        m_pointsPerLine = 50;        // Number of points per flow line
+        m_pointsPerLine = 80;        // Number of points per flow line
         m_totalPoints = m_numLines * m_pointsPerLine;
-        m_minDistance = 0.25f;       // Minimum distance between streamlines
+        m_minDistance = 0.20f;       // Minimum distance between streamlines
         m_adaptiveDensity = true;    // Enable adaptive density
         m_carPosition = 0.0f;        // Current car Z position
         m_prevCarPosition = 0.0f;    // Previous car Z position
         m_carSpeed = 250.0f;         // Car speed in km/h
         m_simulateDRS = false;       // DRS state
         m_relativeDynamics = true;   // Enable relative dynamics (flow moves with car)
+        m_visualizePressure = true;  // Show pressure differences in color 
+        m_vortexIntensity = 1.0f;    // Vortex visualization intensity
 
         // Initialize flow line segments
         initFlowLines();
@@ -92,7 +97,13 @@ public:
                 }
 
                 // Calculate new head position with aerodynamic effects
-                glm::vec3 displacement = applyAerodynamics(flowLine, distanceToAdvance);
+                glm::vec3 displacement;
+                if (flowLine.isVortex) {
+                    displacement = applyVortexMotion(flowLine, distanceToAdvance);
+                }
+                else {
+                    displacement = applyAerodynamics(flowLine, distanceToAdvance);
+                }
                 glm::vec3 newHeadPos = flowLine.points.front() + displacement;
 
                 // Insert new head at the beginning
@@ -137,6 +148,13 @@ public:
         int offset = 0;
         for (const auto& flowLine : m_flowLines) {
             if (flowLine.points.size() > 1) {
+                // Use thicker lines for vortex flows
+                if (flowLine.isVortex) {
+                    glLineWidth(1.8f);
+                }
+                else {
+                    glLineWidth(1.2f);
+                }
                 glDrawArrays(GL_LINE_STRIP, offset, flowLine.points.size());
             }
             offset += flowLine.points.size();
@@ -175,7 +193,13 @@ public:
 
     // Set DRS state (open/closed)
     void setDRS(bool isOpen) {
+        bool stateChanged = (m_simulateDRS != isOpen);
         m_simulateDRS = isOpen;
+
+        // Regenerate vortices when DRS state changes
+        if (stateChanged) {
+            regenerateVortices();
+        }
     }
 
     // Set relative dynamics (flow moves with car)
@@ -183,11 +207,25 @@ public:
         m_relativeDynamics = enable;
     }
 
+    // Toggle pressure visualization
+    void setPressureVisualization(bool enable) {
+        m_visualizePressure = enable;
+    }
+
+    // Set vortex visualization intensity (0.0 - 2.0)
+    void setVortexIntensity(float intensity) {
+        m_vortexIntensity = glm::clamp(intensity, 0.0f, 2.0f);
+        regenerateVortices();
+    }
+
     // Reset all flow lines with the current car position
     void resetAllFlowLines() {
         for (auto& flowLine : m_flowLines) {
             resetFlowLine(flowLine);
         }
+
+        // Ensure vortices are properly generated
+        regenerateVortices();
     }
 
 private:
@@ -221,12 +259,15 @@ private:
         float floorWidth = m_carWidth * 0.8f;
         float floorHeight = 0.05f;
 
+        // Define reserved lines for vortices
+        int vortexLines = m_numLines * 0.1f;  // 10% for vortices
+
         // Determine how many lines to allocate to each zone
-        int frontWingLines = m_numLines * 0.3f;  // 30% for front wing
-        int topLines = m_numLines * 0.2f;        // 20% for top
-        int sideLines = m_numLines * 0.15f;      // 15% for sides
-        int rearWingLines = m_numLines * 0.15f;  // 15% for rear wing
-        int floorLines = m_numLines * 0.2f;      // 20% for floor/diffuser
+        int frontWingLines = m_numLines * 0.25f;  // 25% for front wing
+        int topLines = m_numLines * 0.15f;        // 15% for top
+        int sideLines = m_numLines * 0.15f;       // 15% for sides
+        int rearWingLines = m_numLines * 0.15f;   // 15% for rear wing
+        int floorLines = m_numLines * 0.2f;       // 20% for floor/diffuser
 
         int lineCount = 0;
         std::vector<glm::vec3> existingPositions;
@@ -237,6 +278,7 @@ private:
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 0;  // Front wing zone
             flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
+            flowLine.isVortex = false;
 
             // Try several positions until we find one with proper spacing
             bool positionFound = false;
@@ -280,6 +322,7 @@ private:
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 1;  // Top zone
             flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
+            flowLine.isVortex = false;
 
             bool positionFound = false;
             for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
@@ -320,6 +363,7 @@ private:
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 2;  // Side zone
             flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
+            flowLine.isVortex = false;
 
             bool positionFound = false;
             for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
@@ -360,6 +404,7 @@ private:
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 3;  // Rear wing zone
             flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
+            flowLine.isVortex = false;
 
             bool positionFound = false;
             for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
@@ -412,6 +457,7 @@ private:
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 4;  // Floor zone
             flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
+            flowLine.isVortex = false;
 
             bool positionFound = false;
             for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
@@ -445,6 +491,9 @@ private:
                 }
             }
         }
+
+        // Add vortex flow lines after normal lines
+        regenerateVortices();
     }
 
     // Check if a position maintains minimum distance from existing positions
@@ -507,34 +556,22 @@ private:
             float speedEffect = 1.0f + (carSpeedFactor * 0.5f);
             displacement.z *= 1.2f * speedEffect;  // Accelerate flow under car
             displacement.y *= 0.8f;  // Keep flow close to ground
+
+            // Modify pressure for flow lines under the car
+            // This will be used in color calculations
+            if (flowLine.zoneType == 4) { // Floor zone
+                // Update pressure value for this flow line if it's under the car
+                // We'll later use this in color calculations
+                const_cast<FlowLine&>(flowLine).pressure =
+                    glm::clamp(flowLine.pressure * 0.5f, 0.05f, 0.2f); // Very low pressure under car
+            }
         }
 
-        // 3. Wing vortices - generate tip vortices from wings
+        // 3. Wing vortices - generate tip vortices from wings (handled separately in vortex flows)
         float wingTipDistance = std::min(
             std::abs(relativePos.x - m_carWidth * 0.4f),
             std::abs(relativePos.x + m_carWidth * 0.4f)
         );
-
-        // Rear wing vortices (stronger at higher speeds)
-        if (wingTipDistance < 0.2f && std::abs(relativePos.z - m_carLength * 0.4f) < 0.3f) {
-            float vortexStrength = 0.08f * (1.0f - wingTipDistance / 0.2f) * carSpeedFactor;
-
-            // Reduce vortex strength if DRS is open
-            if (m_simulateDRS) {
-                vortexStrength *= 0.6f;
-            }
-
-            float angle = relativePos.z * 10.0f + (m_carSpeed * 0.01f);  // Rotating angle for vortex (affected by speed)
-            displacement.x += vortexStrength * std::sin(angle);
-            displacement.y += vortexStrength * std::cos(angle);
-        }
-        // Front wing vortices (stronger at higher speeds)
-        else if (wingTipDistance < 0.2f && std::abs(relativePos.z + m_carLength * 0.4f) < 0.3f) {
-            float vortexStrength = 0.08f * (1.0f - wingTipDistance / 0.2f) * carSpeedFactor;
-            float angle = relativePos.z * 10.0f + (m_carSpeed * 0.01f);  // Rotating angle for vortex
-            displacement.x += vortexStrength * std::sin(angle);
-            displacement.y += vortexStrength * std::cos(angle);
-        }
 
         // 4. Add small turbulence - increases with car speed
         float turbulence = 0.01f * (0.5f + carSpeedFactor * 0.5f);
@@ -545,96 +582,303 @@ private:
         return displacement;
     }
 
-    // Reset a flow line to its initial state with some variation
+    // Apply vortex motion to vortex flow lines
+    glm::vec3 applyVortexMotion(const FlowLine& flowLine, float distanceToAdvance) {
+        glm::vec3 currentHead = flowLine.points.front();
+
+        // Calculate relative position to car's current position
+        glm::vec3 relativePos = currentHead;
+        relativePos.z -= m_carPosition;  // Adjust Z to get position relative to car
+
+        // Base forward motion
+        float carSpeedFactor = m_carSpeed / 250.0f;
+        glm::vec3 displacement = glm::vec3(0.0f, 0.0f, distanceToAdvance * carSpeedFactor);
+
+        // Calculate vortex rotation
+        float vortexPhase = const_cast<FlowLine&>(flowLine).vortexPhase += 0.1f * carSpeedFactor;
+
+        // Apply vortex rotation - depends on the vortex strength and phase
+        float rotationRadius = flowLine.vortexStrength * 0.1f * m_vortexIntensity;
+        float rotationSpeed = 0.5f + (carSpeedFactor * 0.5f);
+
+        // Vortex motion depends on distance from origin
+        float distFromOrigin = glm::length(glm::vec2(relativePos.x, relativePos.y));
+        rotationRadius *= (1.0f - std::min(1.0f, distFromOrigin / 2.0f));
+
+        // Apply spiral motion
+        displacement.x += rotationRadius * std::cos(vortexPhase * rotationSpeed);
+        displacement.y += rotationRadius * std::sin(vortexPhase * rotationSpeed);
+
+        // Add some random turbulence to make it look more realistic
+        float turbulence = 0.005f * (0.5f + carSpeedFactor * 0.5f);
+        displacement.x += generateRandomFloat(-turbulence, turbulence);
+        displacement.y += generateRandomFloat(-turbulence, turbulence);
+
+        return displacement;
+    }
+
+    // Generate vortex flow lines around wing tip areas
+    void regenerateVortices() {
+        // Remove existing vortex lines
+        m_flowLines.erase(
+            std::remove_if(m_flowLines.begin(), m_flowLines.end(),
+                [](const FlowLine& line) { return line.isVortex; }),
+            m_flowLines.end()
+        );
+
+        // Calculate how many vortex lines to generate
+        int vortexLines = std::min(int(m_numLines * 0.1f * m_vortexIntensity), int(m_numLines * 0.2f));
+
+        // Wing dimensions for vortex positioning
+        float frontWingZ = -m_carLength * 0.5f;
+        float rearWingZ = m_carLength * 0.4f;
+        float wingWidth = m_carWidth * 0.9f;
+        float rearWingHeight = m_carHeight * 0.9f;
+        float frontWingHeight = m_carHeight * 0.3f;
+
+        // Generate vortices at wing tips
+        std::vector<std::pair<glm::vec3, float>> vortexPositions;
+
+        // Front wing tip vortices
+        vortexPositions.push_back(std::make_pair(
+            glm::vec3(wingWidth * 0.5f, frontWingHeight * 0.7f, frontWingZ),
+            0.8f  // Strength
+        ));
+        vortexPositions.push_back(std::make_pair(
+            glm::vec3(-wingWidth * 0.5f, frontWingHeight * 0.7f, frontWingZ),
+            0.8f  // Strength
+        ));
+
+        // Rear wing tip vortices - strength affected by DRS
+        float rearVortexStrength = m_simulateDRS ? 0.5f : 1.0f;  // Weaker vortices with DRS open
+
+        vortexPositions.push_back(std::make_pair(
+            glm::vec3(wingWidth * 0.45f, rearWingHeight * 0.9f, rearWingZ),
+            rearVortexStrength
+        ));
+        vortexPositions.push_back(std::make_pair(
+            glm::vec3(-wingWidth * 0.45f, rearWingHeight * 0.9f, rearWingZ),
+            rearVortexStrength
+        ));
+
+        // Add DRS-specific vortices when DRS is closed
+        if (!m_simulateDRS) {
+            // Center vortex from DRS flap trailing edge
+            vortexPositions.push_back(std::make_pair(
+                glm::vec3(0.0f, rearWingHeight * 0.95f, rearWingZ + 0.1f),
+                0.9f
+            ));
+
+            // Additional vortices from DRS flap edges
+            vortexPositions.push_back(std::make_pair(
+                glm::vec3(wingWidth * 0.3f, rearWingHeight * 0.93f, rearWingZ + 0.05f),
+                0.7f
+            ));
+            vortexPositions.push_back(std::make_pair(
+                glm::vec3(-wingWidth * 0.3f, rearWingHeight * 0.93f, rearWingZ + 0.05f),
+                0.7f
+            ));
+        }
+
+        // Generate vortex flow lines
+        for (int i = 0; i < vortexLines && i < vortexPositions.size(); i++) {
+            const glm::vec3& basePosition = vortexPositions[i].first;
+            float strength = vortexPositions[i].second;
+
+            // Create multiple flow lines per vortex center
+            int linesPerVortex = std::max(1, static_cast<int>(3 * m_vortexIntensity));
+            for (int j = 0; j < linesPerVortex && m_flowLines.size() < m_numLines; j++) {
+                FlowLine flowLine;
+                flowLine.maxPoints = m_pointsPerLine;
+                flowLine.zoneType = (basePosition.z < 0) ? 0 : 3;  // Front or rear wing
+                flowLine.lastCarPosition = m_carPosition;
+                flowLine.isVortex = true;
+                flowLine.vortexStrength = strength * (1.0f + generateRandomFloat(-0.2f, 0.2f));
+                flowLine.vortexPhase = generateRandomFloat(0.0f, 6.28f);  // Random start phase
+
+                // Add small random offset from vortex center
+                glm::vec3 position = basePosition;
+                position.x += generateRandomFloat(-0.05f, 0.05f);
+                position.y += generateRandomFloat(-0.05f, 0.05f);
+                position.z += generateRandomFloat(-0.05f, 0.05f);
+
+                // Store initial offset from car reference position
+                flowLine.initialOffset = position;
+
+                // Add car position to get world position
+                position.z += m_carPosition;
+
+                flowLine.initialPosition = position;
+                flowLine.direction = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));
+
+                // Differentiate vortex pressure values
+                if (flowLine.zoneType == 0) {  // Front wing
+                    flowLine.pressure = generateRandomFloat(0.2f, 0.4f);  // Lower pressure
+                }
+                else {  // Rear wing
+                    flowLine.pressure = m_simulateDRS ?
+                        generateRandomFloat(0.1f, 0.2f) :  // Very low pressure with DRS open
+                        generateRandomFloat(0.3f, 0.5f);   // Moderate pressure with DRS closed
+                }
+
+                flowLine.velocity = generateRandomFloat(6.0f, 10.0f) * (m_carSpeed / 250.0f);
+                flowLine.speed = flowLine.velocity;
+                flowLine.initialLife = generateRandomFloat(4.0f, 6.0f);  // Longer life for vortices
+                flowLine.life = flowLine.initialLife;
+
+                flowLine.points.push_back(position);
+
+                // Use special color for vortex lines
+                glm::vec3 vortexColor = calculateVortexColor(flowLine);
+                flowLine.colors.push_back(vortexColor);
+
+                m_flowLines.push_back(flowLine);
+            }
+        }
+    }
+
+    // Calculate flow line color based on pressure, life, and position
+    glm::vec3 calculateFlowColor(float lifeRatio, float pointPosition, const FlowLine& flowLine) {
+        // Default color scheme based on pressure areas
+        glm::vec3 color;
+
+        // Base color selection depends on visualization mode
+        if (m_visualizePressure) {
+            // Improved pressure-based coloring
+            if (flowLine.pressure < 0.2f) {
+                // Low pressure - blue tones
+                color = glm::vec3(0.0f, 0.3f, 1.0f); // Vibrant blue for very low pressure
+            }
+            else if (flowLine.pressure < 0.4f) {
+                // Medium-low pressure - cyan to teal
+                float t = (flowLine.pressure - 0.2f) / 0.2f;
+                color = glm::mix(glm::vec3(0.0f, 0.3f, 1.0f), glm::vec3(0.0f, 0.7f, 0.7f), t);
+            }
+            else if (flowLine.pressure < 0.6f) {
+                // Medium pressure - green to yellow
+                float t = (flowLine.pressure - 0.4f) / 0.2f;
+                color = glm::mix(glm::vec3(0.0f, 0.7f, 0.3f), glm::vec3(0.7f, 0.7f, 0.0f), t);
+            }
+            else if (flowLine.pressure < 0.8f) {
+                // Medium-high pressure - yellow to orange
+                float t = (flowLine.pressure - 0.6f) / 0.2f;
+                color = glm::mix(glm::vec3(0.7f, 0.7f, 0.0f), glm::vec3(1.0f, 0.5f, 0.0f), t);
+            }
+            else {
+                // High pressure - orange to red
+                float t = (flowLine.pressure - 0.8f) / 0.2f;
+                color = glm::mix(glm::vec3(1.0f, 0.5f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f), t);
+            }
+        }
+        else {
+            // Zone-based coloring when pressure visualization is off
+            switch (flowLine.zoneType) {
+            case 0: // Front wing
+                color = glm::vec3(0.9f, 0.2f, 0.2f); // Red
+                break;
+            case 1: // Top
+                color = glm::vec3(0.2f, 0.7f, 0.2f); // Green
+                break;
+            case 2: // Side
+                color = glm::vec3(0.2f, 0.5f, 0.9f); // Blue
+                break;
+            case 3: // Rear wing
+                color = glm::vec3(0.9f, 0.7f, 0.2f); // Yellow
+                break;
+            case 4: // Floor
+                color = glm::vec3(0.9f, 0.2f, 0.9f); // Magenta
+                break;
+            default:
+                color = glm::vec3(0.7f); // Gray
+            }
+        }
+
+        // Apply fade effect based on life and position in line
+        float fadeByLife = lifeRatio;
+        float fadeByPosition = 1.0f - pointPosition; // Fade tail
+        float totalFade = fadeByLife * fadeByPosition;
+
+        // Apply velocity effect to brightness
+        float velocityFactor = glm::clamp(flowLine.velocity / 10.0f, 0.5f, 1.5f);
+        color *= velocityFactor;
+
+        // Apply additional alpha fade based on total fade value
+        float alpha = glm::clamp(totalFade, 0.1f, 1.0f);
+
+        // Return final color with alpha component
+        return glm::vec3(color.r, color.g, color.b) * alpha;
+    }
+
+    // Special color calculation for vortex flow lines
+    glm::vec3 calculateVortexColor(const FlowLine& flowLine) {
+        // Vortices get special colors to make them stand out
+        glm::vec3 color;
+
+        if (flowLine.zoneType == 0) {  // Front wing vortices
+            // Blue-cyan spiral
+            color = glm::vec3(0.2f, 0.5f, 1.0f);
+        }
+        else {  // Rear wing vortices
+            if (m_simulateDRS) {
+                // DRS open - golden yellow vortices
+                color = glm::vec3(1.0f, 0.8f, 0.2f);
+            }
+            else {
+                // DRS closed - reddish orange vortices
+                color = glm::vec3(1.0f, 0.4f, 0.1f);
+            }
+        }
+
+        // Intensity affected by vortex strength
+        float intensityFactor = 0.7f + (flowLine.vortexStrength * 0.3f);
+        color *= intensityFactor;
+
+        // Make vortices more visible with higher alpha
+        float alpha = 0.9f;
+
+        return color * alpha;
+    }
+
+    // Reset a flow line to its initial state with updated car position
     void resetFlowLine(FlowLine& flowLine) {
+        // Clear existing points
         flowLine.points.clear();
         flowLine.colors.clear();
 
-        // Add some variation to starting position
-        glm::vec3 variation(
-            generateRandomFloat(-0.1f, 0.1f),
-            generateRandomFloat(-0.1f, 0.1f),
-            generateRandomFloat(-0.1f, 0.1f)
-        );
+        // Reset life
+        flowLine.life = flowLine.initialLife;
 
-        // Calculate new position based on car position and initial offset
-        glm::vec3 newPos = flowLine.initialOffset + variation;
-        newPos.z += m_carPosition;  // Add current car position
+        // Update position based on car's current position
+        glm::vec3 newPosition = flowLine.initialOffset;
+        newPosition.z += m_carPosition;
 
-        // Update last car position
+        // Update last known car position
         flowLine.lastCarPosition = m_carPosition;
 
-        // Add some variation to direction based on car speed
-        float speedFactor = m_carSpeed / 250.0f;
-        float variationScale = 0.05f + (0.05f * speedFactor);
+        // Initialize with starting point
+        flowLine.points.push_back(newPosition);
 
-        glm::vec3 dirVariation(
-            generateRandomFloat(-variationScale, variationScale),
-            generateRandomFloat(-variationScale, variationScale),
-            generateRandomFloat(-variationScale, variationScale)
-        );
-
-        flowLine.direction = glm::normalize(flowLine.direction + dirVariation);
-
-        // Update initial position
-        flowLine.initialPosition = newPos;
-
-        // Reset life with some variation based on car speed
-        flowLine.life = flowLine.initialLife * generateRandomFloat(0.8f, 1.2f);
-
-        // Lower life at higher speeds to simulate faster flow
-        flowLine.life *= (1.1f - (speedFactor * 0.2f));
-
-        // Update speed based on car speed with some variation
-        float speedVariation = generateRandomFloat(0.9f, 1.1f);
-        flowLine.speed = flowLine.velocity * speedFactor * speedVariation;
-
-        // Add starting point
-        flowLine.points.push_back(newPos);
-        flowLine.colors.push_back(calculateFlowColor(1.0f, 0.0f, flowLine));
-    }
-
-    // Calculate color based on flow properties (pressure, velocity, position)
-    glm::vec3 calculateFlowColor(float lifeRatio, float pointPosition, const FlowLine& flowLine) {
-        // Calculate velocity magnitude effect (0-1 range)
-        float velocityFactor = glm::clamp(flowLine.velocity / 12.0f, 0.0f, 1.0f);
-
-        // Adjust color based on car speed (higher speeds = redder colors)
-        float speedInfluence = m_carSpeed / 350.0f; // Normalize to 0-1 range (assuming max speed ~350)
-        velocityFactor = glm::mix(velocityFactor, velocityFactor + 0.3f, speedInfluence);
-        velocityFactor = glm::clamp(velocityFactor, 0.0f, 1.0f);
-
-        // Professional CFD color scheme (blue→green→yellow→red)
-        glm::vec3 color;
-
-        if (velocityFactor < 0.25f) {
-            // Blue to Cyan
-            float t = velocityFactor / 0.25f;
-            color = glm::vec3(0.0f, t, 1.0f);
-        }
-        else if (velocityFactor < 0.5f) {
-            // Cyan to Green
-            float t = (velocityFactor - 0.25f) / 0.25f;
-            color = glm::vec3(0.0f, 1.0f, 1.0f - t);
-        }
-        else if (velocityFactor < 0.75f) {
-            // Green to Yellow
-            float t = (velocityFactor - 0.5f) / 0.25f;
-            color = glm::vec3(t, 1.0f, 0.0f);
+        // Calculate initial color based on flow type
+        glm::vec3 initialColor;
+        if (flowLine.isVortex) {
+            initialColor = calculateVortexColor(flowLine);
         }
         else {
-            // Yellow to Red
-            float t = (velocityFactor - 0.75f) / 0.25f;
-            color = glm::vec3(1.0f, 1.0f - t, 0.0f);
+            initialColor = calculateFlowColor(1.0f, 0.0f, flowLine);
         }
 
-        // Apply fade-out effect based on life ratio
-        color *= lifeRatio;
+        flowLine.colors.push_back(initialColor);
 
-        return color;
+        // For vortices, reset phase but keep the strength
+        if (flowLine.isVortex) {
+            flowLine.vortexPhase = generateRandomFloat(0.0f, 6.28f);
+        }
+
+        // Adjust speed based on current car speed
+        flowLine.speed = flowLine.velocity * (m_carSpeed / 250.0f);
     }
 
-    // Set up OpenGL buffers
+    // Initialize OpenGL buffers for flow line rendering
     void setupBuffers() {
         glGenVertexArrays(1, &m_VAO);
         glGenBuffers(1, &m_VBO);
@@ -642,25 +886,24 @@ private:
 
         glBindVertexArray(m_VAO);
 
-        // Position attribute
+        // Position buffer
         glBindBuffer(GL_ARRAY_BUFFER, m_VBO);
         glBufferData(GL_ARRAY_BUFFER, m_totalPoints * sizeof(glm::vec3), nullptr, GL_DYNAMIC_DRAW);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
         glEnableVertexAttribArray(0);
 
-        // Color attribute
+        // Color buffer
         glBindBuffer(GL_ARRAY_BUFFER, m_colorVBO);
         glBufferData(GL_ARRAY_BUFFER, m_totalPoints * sizeof(glm::vec3), nullptr, GL_DYNAMIC_DRAW);
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
         glEnableVertexAttribArray(1);
 
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
     }
 
-    // Update OpenGL buffers with new vertex and color data
+    // Update buffer data with current flow line points and colors
     void updateBuffers(const std::vector<glm::vec3>& vertices, const std::vector<glm::vec3>& colors) {
-        glBindVertexArray(m_VAO);
-
         // Update vertex positions
         glBindBuffer(GL_ARRAY_BUFFER, m_VBO);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_DYNAMIC_DRAW);
@@ -669,33 +912,41 @@ private:
         glBindBuffer(GL_ARRAY_BUFFER, m_colorVBO);
         glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(glm::vec3), colors.data(), GL_DYNAMIC_DRAW);
 
-        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 
-    // Generate random float between min and max
+    // Generate random float in range
     float generateRandomFloat(float min, float max) {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        std::uniform_real_distribution<float> dis(min, max);
-        return dis(gen);
+        static std::mt19937 generator(std::random_device{}());
+        std::uniform_real_distribution<float> distribution(min, max);
+        return distribution(generator);
     }
 
 private:
-    std::vector<FlowLine> m_flowLines;    // Collection of flow lines
-    unsigned int m_VAO, m_VBO, m_colorVBO;  // OpenGL objects
-    int m_numLines;                       // Number of flow lines
-    int m_pointsPerLine;                  // Max points per line
-    int m_totalPoints;                    // Total points capacity
-    float m_minDistance;                  // Minimum distance between lines
-    bool m_adaptiveDensity;               // Enable adaptive density
-    float m_carLength;                    // Car dimensions
+    // OpenGL buffer objects
+    GLuint m_VAO, m_VBO, m_colorVBO;
+
+    // Flow lines data
+    std::vector<FlowLine> m_flowLines;
+    int m_numLines;
+    int m_pointsPerLine;
+    int m_totalPoints;
+
+    // Car properties
+    float m_carLength;
     float m_carWidth;
     float m_carHeight;
-    float m_carPosition;                  // Current car Z position
-    float m_prevCarPosition;              // Previous car Z position
-    float m_carSpeed;                     // Car speed in km/h
-    bool m_simulateDRS;                   // DRS state
-    bool m_relativeDynamics;              // Flow moves with car
+    float m_carPosition;
+    float m_prevCarPosition;
+    float m_carSpeed;
+
+    // Visualization parameters
+    float m_minDistance;
+    bool m_adaptiveDensity;
+    bool m_simulateDRS;
+    bool m_relativeDynamics;
+    bool m_visualizePressure;
+    float m_vortexIntensity;
 };
 
 #endif // FLOW_VISUALIZATION_H
