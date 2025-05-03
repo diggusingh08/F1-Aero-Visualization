@@ -22,6 +22,7 @@ struct FlowLine {
     float velocity;                  // Velocity magnitude
     int zoneType;                    // The emission zone this flow line came from
     glm::vec3 initialOffset;         // Initial offset from car's reference position
+    float lastCarPosition;           // Last known car position for this flow line
 };
 
 // Main class for flow line visualization
@@ -38,8 +39,10 @@ public:
         m_minDistance = 0.25f;       // Minimum distance between streamlines
         m_adaptiveDensity = true;    // Enable adaptive density
         m_carPosition = 0.0f;        // Current car Z position
+        m_prevCarPosition = 0.0f;    // Previous car Z position
         m_carSpeed = 250.0f;         // Car speed in km/h
         m_simulateDRS = false;       // DRS state
+        m_relativeDynamics = true;   // Enable relative dynamics (flow moves with car)
 
         // Initialize flow line segments
         initFlowLines();
@@ -48,6 +51,10 @@ public:
 
     // Update flow line positions
     void update(float deltaTime) {
+        // Calculate car movement delta
+        float carMovementDelta = m_carPosition - m_prevCarPosition;
+        m_prevCarPosition = m_carPosition;
+
         std::vector<glm::vec3> vertices;
         std::vector<glm::vec3> colors;
 
@@ -63,6 +70,18 @@ public:
 
             // Calculate how much to advance the flow line
             float distanceToAdvance = flowLine.speed * deltaTime;
+
+            // If relative dynamics is enabled, adjust for car movement
+            if (m_relativeDynamics) {
+                // Calculate relative movement delta for this specific flow line
+                float relativeDelta = m_carPosition - flowLine.lastCarPosition;
+                flowLine.lastCarPosition = m_carPosition;
+
+                // Apply car movement to existing points (they move with the car)
+                for (auto& point : flowLine.points) {
+                    point.z += relativeDelta;
+                }
+            }
 
             // Shift all points forward
             if (flowLine.points.size() > 0) {
@@ -159,6 +178,11 @@ public:
         m_simulateDRS = isOpen;
     }
 
+    // Set relative dynamics (flow moves with car)
+    void setRelativeDynamics(bool enable) {
+        m_relativeDynamics = enable;
+    }
+
     // Reset all flow lines with the current car position
     void resetAllFlowLines() {
         for (auto& flowLine : m_flowLines) {
@@ -212,6 +236,7 @@ private:
             FlowLine flowLine;
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 0;  // Front wing zone
+            flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
 
             // Try several positions until we find one with proper spacing
             bool positionFound = false;
@@ -254,6 +279,7 @@ private:
             FlowLine flowLine;
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 1;  // Top zone
+            flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
 
             bool positionFound = false;
             for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
@@ -293,6 +319,7 @@ private:
             FlowLine flowLine;
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 2;  // Side zone
+            flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
 
             bool positionFound = false;
             for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
@@ -332,6 +359,7 @@ private:
             FlowLine flowLine;
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 3;  // Rear wing zone
+            flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
 
             bool positionFound = false;
             for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
@@ -383,6 +411,7 @@ private:
             FlowLine flowLine;
             flowLine.maxPoints = m_pointsPerLine;
             flowLine.zoneType = 4;  // Floor zone
+            flowLine.lastCarPosition = m_carPosition;  // Initialize with current car position
 
             bool positionFound = false;
             for (int attempt = 0; attempt < 10 && !positionFound; attempt++) {
@@ -440,27 +469,32 @@ private:
         glm::vec3 relativePos = currentHead;
         relativePos.z -= m_carPosition;  // Adjust Z to get position relative to car
 
+        // Apply car speed effects to flow velocity
+        float carSpeedFactor = m_carSpeed / 250.0f;
+        displacement *= carSpeedFactor;
+
         // 1. Wake effect - streamlines should curve behind the car
         float wakeStrength = 0.0f;
         if (relativePos.z > m_carLength * 0.3f) {  // Behind car
             float distanceFromCenterline = std::abs(relativePos.x);
             wakeStrength = 0.05f * std::exp(-(relativePos.z - m_carLength * 0.3f) / 2.0f);
 
-            // Inward curvature in wake
+            // Inward curvature in wake (stronger at higher car speeds)
+            float speedMultiplier = 0.8f + (carSpeedFactor * 0.4f);
             if (relativePos.x > 0) {
-                displacement.x -= wakeStrength;
+                displacement.x -= wakeStrength * speedMultiplier;
             }
             else {
-                displacement.x += wakeStrength;
+                displacement.x += wakeStrength * speedMultiplier;
             }
 
             // Upwash in wake - modified by DRS state for rear wing area
             if (m_simulateDRS && std::abs(relativePos.x) < m_carWidth * 0.3f &&
                 relativePos.z < m_carLength * 0.6f) {
-                displacement.y += wakeStrength * 0.3f;  // Less upwash with DRS open
+                displacement.y += wakeStrength * 0.3f * speedMultiplier;  // Less upwash with DRS open
             }
             else {
-                displacement.y += wakeStrength * 0.5f;  // Normal upwash
+                displacement.y += wakeStrength * 0.5f * speedMultiplier;  // Normal upwash
             }
         }
 
@@ -469,7 +503,9 @@ private:
             std::abs(relativePos.x) < m_carWidth * 0.4f &&
             std::abs(relativePos.z) < m_carLength * 0.4f) {
 
-            displacement.z *= 1.2f;  // Accelerate flow under car
+            // Stronger ground effect at higher speeds
+            float speedEffect = 1.0f + (carSpeedFactor * 0.5f);
+            displacement.z *= 1.2f * speedEffect;  // Accelerate flow under car
             displacement.y *= 0.8f;  // Keep flow close to ground
         }
 
@@ -479,29 +515,29 @@ private:
             std::abs(relativePos.x + m_carWidth * 0.4f)
         );
 
-        // Rear wing vortices
+        // Rear wing vortices (stronger at higher speeds)
         if (wingTipDistance < 0.2f && std::abs(relativePos.z - m_carLength * 0.4f) < 0.3f) {
-            float vortexStrength = 0.08f * (1.0f - wingTipDistance / 0.2f);
+            float vortexStrength = 0.08f * (1.0f - wingTipDistance / 0.2f) * carSpeedFactor;
 
             // Reduce vortex strength if DRS is open
             if (m_simulateDRS) {
                 vortexStrength *= 0.6f;
             }
 
-            float angle = relativePos.z * 10.0f;  // Rotating angle for vortex
+            float angle = relativePos.z * 10.0f + (m_carSpeed * 0.01f);  // Rotating angle for vortex (affected by speed)
             displacement.x += vortexStrength * std::sin(angle);
             displacement.y += vortexStrength * std::cos(angle);
         }
-        // Front wing vortices
+        // Front wing vortices (stronger at higher speeds)
         else if (wingTipDistance < 0.2f && std::abs(relativePos.z + m_carLength * 0.4f) < 0.3f) {
-            float vortexStrength = 0.08f * (1.0f - wingTipDistance / 0.2f);
-            float angle = relativePos.z * 10.0f;  // Rotating angle for vortex
+            float vortexStrength = 0.08f * (1.0f - wingTipDistance / 0.2f) * carSpeedFactor;
+            float angle = relativePos.z * 10.0f + (m_carSpeed * 0.01f);  // Rotating angle for vortex
             displacement.x += vortexStrength * std::sin(angle);
             displacement.y += vortexStrength * std::cos(angle);
         }
 
-        // 4. Add small turbulence - but significantly less than before
-        float turbulence = 0.01f;  // Reduced turbulence for less chaotic flow
+        // 4. Add small turbulence - increases with car speed
+        float turbulence = 0.01f * (0.5f + carSpeedFactor * 0.5f);
         displacement.x += generateRandomFloat(-turbulence, turbulence);
         displacement.y += generateRandomFloat(-turbulence, turbulence);
         displacement.z += generateRandomFloat(-turbulence, turbulence);
@@ -525,11 +561,17 @@ private:
         glm::vec3 newPos = flowLine.initialOffset + variation;
         newPos.z += m_carPosition;  // Add current car position
 
-        // Add some variation to direction
+        // Update last car position
+        flowLine.lastCarPosition = m_carPosition;
+
+        // Add some variation to direction based on car speed
+        float speedFactor = m_carSpeed / 250.0f;
+        float variationScale = 0.05f + (0.05f * speedFactor);
+
         glm::vec3 dirVariation(
-            generateRandomFloat(-0.05f, 0.05f),
-            generateRandomFloat(-0.05f, 0.05f),
-            generateRandomFloat(-0.05f, 0.05f)
+            generateRandomFloat(-variationScale, variationScale),
+            generateRandomFloat(-variationScale, variationScale),
+            generateRandomFloat(-variationScale, variationScale)
         );
 
         flowLine.direction = glm::normalize(flowLine.direction + dirVariation);
@@ -537,11 +579,15 @@ private:
         // Update initial position
         flowLine.initialPosition = newPos;
 
-        // Reset life
+        // Reset life with some variation based on car speed
         flowLine.life = flowLine.initialLife * generateRandomFloat(0.8f, 1.2f);
 
-        // Update speed based on car speed
-        flowLine.speed = flowLine.velocity * (m_carSpeed / 250.0f);
+        // Lower life at higher speeds to simulate faster flow
+        flowLine.life *= (1.1f - (speedFactor * 0.2f));
+
+        // Update speed based on car speed with some variation
+        float speedVariation = generateRandomFloat(0.9f, 1.1f);
+        flowLine.speed = flowLine.velocity * speedFactor * speedVariation;
 
         // Add starting point
         flowLine.points.push_back(newPos);
@@ -552,6 +598,11 @@ private:
     glm::vec3 calculateFlowColor(float lifeRatio, float pointPosition, const FlowLine& flowLine) {
         // Calculate velocity magnitude effect (0-1 range)
         float velocityFactor = glm::clamp(flowLine.velocity / 12.0f, 0.0f, 1.0f);
+
+        // Adjust color based on car speed (higher speeds = redder colors)
+        float speedInfluence = m_carSpeed / 350.0f; // Normalize to 0-1 range (assuming max speed ~350)
+        velocityFactor = glm::mix(velocityFactor, velocityFactor + 0.3f, speedInfluence);
+        velocityFactor = glm::clamp(velocityFactor, 0.0f, 1.0f);
 
         // Professional CFD color scheme (blue→green→yellow→red)
         glm::vec3 color;
@@ -603,27 +654,25 @@ private:
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
         glEnableVertexAttribArray(1);
 
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
     }
 
-    // Update buffer data
+    // Update OpenGL buffers with new vertex and color data
     void updateBuffers(const std::vector<glm::vec3>& vertices, const std::vector<glm::vec3>& colors) {
         glBindVertexArray(m_VAO);
 
-        // Update position data
+        // Update vertex positions
         glBindBuffer(GL_ARRAY_BUFFER, m_VBO);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(glm::vec3), vertices.data());
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_DYNAMIC_DRAW);
 
-        // Update color data
+        // Update vertex colors
         glBindBuffer(GL_ARRAY_BUFFER, m_colorVBO);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, colors.size() * sizeof(glm::vec3), colors.data());
+        glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(glm::vec3), colors.data(), GL_DYNAMIC_DRAW);
 
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
     }
 
-    // Generate random float in range
+    // Generate random float between min and max
     float generateRandomFloat(float min, float max) {
         static std::random_device rd;
         static std::mt19937 gen(rd());
@@ -632,19 +681,21 @@ private:
     }
 
 private:
-    std::vector<FlowLine> m_flowLines;
-    unsigned int m_VAO, m_VBO, m_colorVBO;
-    int m_numLines;
-    int m_pointsPerLine;
-    int m_totalPoints;
-    float m_carLength;
+    std::vector<FlowLine> m_flowLines;    // Collection of flow lines
+    unsigned int m_VAO, m_VBO, m_colorVBO;  // OpenGL objects
+    int m_numLines;                       // Number of flow lines
+    int m_pointsPerLine;                  // Max points per line
+    int m_totalPoints;                    // Total points capacity
+    float m_minDistance;                  // Minimum distance between lines
+    bool m_adaptiveDensity;               // Enable adaptive density
+    float m_carLength;                    // Car dimensions
     float m_carWidth;
     float m_carHeight;
-    float m_minDistance;       // Minimum distance between streamlines
-    bool m_adaptiveDensity;    // Enable adaptive density based on importance
-    float m_carPosition;       // Current car position
-    float m_carSpeed;          // Car speed in km/h
-    bool m_simulateDRS;        // DRS state (open/closed)
+    float m_carPosition;                  // Current car Z position
+    float m_prevCarPosition;              // Previous car Z position
+    float m_carSpeed;                     // Car speed in km/h
+    bool m_simulateDRS;                   // DRS state
+    bool m_relativeDynamics;              // Flow moves with car
 };
 
 #endif // FLOW_VISUALIZATION_H
