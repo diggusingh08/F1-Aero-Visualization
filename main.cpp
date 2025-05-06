@@ -50,7 +50,7 @@ float carPosition = 0.0f; // Z position of the car
 float movementSpeed = 0.0f; // Current movement speed
 float maxMovementSpeed = 10.0f; // Maximum movement speed
 bool carMoving = false; // Is the car currently moving?
-bool cameraMoveWithCar = false; // Should camera follow the car?
+bool cameraMoveWithCar = true; // Should camera follow the car?
 
 // Rendering variables
 int windowWidth = 1200;
@@ -83,6 +83,16 @@ void printCurrentDirectory();
 void setCurrentCameraPreset();
 void printSimulationInfo();
 void updateCarMovement(float deltaTime);
+void drawBackground() {
+    // Set the background color (for example, a light gray)
+    glBegin(GL_QUADS);
+    glColor3f(0.8f, 0.8f, 0.8f);  // Light gray color
+    glVertex3f(-500.0f, -500.0f, -10.0f);
+    glVertex3f(500.0f, -500.0f, -10.0f);
+    glVertex3f(500.0f, 500.0f, -10.0f);
+    glVertex3f(-500.0f, 500.0f, -10.0f);
+    glEnd();
+}
 
 // Mouse callback function
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
@@ -144,6 +154,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     }
     if (key == GLFW_KEY_V && action == GLFW_PRESS) {
         currentPreset = (currentPreset + 1) % cameraPresets.size();
+        
         setCurrentCameraPreset();
     }
     if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
@@ -394,6 +405,7 @@ int main() {
 
         // 8. Load model
         std::string modelPath = "C:/Users/hp/Desktop/C assgn/ComputerGraphicsProject/F1_Project_lib/F1_Project_lib/x64/Release/mcl35m_2.obj";
+
         std::cout << "Loading model from: " << modelPath << std::endl;
         Model ourModel(modelPath);
         std::cout << "Model loaded successfully!" << std::endl;
@@ -424,7 +436,6 @@ int main() {
             float currentFrame = glfwGetTime();
             deltaTime = currentFrame - lastFrame;
             lastFrame = currentFrame;
-
             // Limit frame rate to avoid too fast simulation on powerful GPUs
             if (deltaTime < 0.01f) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10 - static_cast<int>(deltaTime * 1000)));
@@ -432,30 +443,23 @@ int main() {
                 deltaTime = currentFrame - lastFrame;
                 lastFrame = currentFrame;
             }
-
             processInput(window);
-
             // Update car movement
             updateCarMovement(deltaTime);
-
+            flowLinesVis.setCarPosition(carPosition);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+            drawBackground(); // Call th
             glm::mat4 projection = glm::perspective(glm::radians(fov), static_cast<float>(windowWidth) / windowHeight, 0.1f, 100.0f);
             glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-
             if (showCar) {
                 ourShader.use();
-
                 ourShader.setVec3("lightPos", glm::vec3(5.0f, 5.0f, 5.0f));
                 ourShader.setVec3("viewPos", cameraPos);
                 ourShader.setVec3("lightColor", glm::vec3(1.0f, 1.0f, 1.0f));
-
                 // Use McLaren orange color
                 ourShader.setVec3("objectColor", glm::vec3(1.0f, 0.35f, 0.0f));
-
                 ourShader.setMat4("projection", projection);
                 ourShader.setMat4("view", view);
-
                 // Center the car properly and apply position offset
                 glm::mat4 model = glm::mat4(1.0f);
                 model = glm::translate(model, glm::vec3(0.0f, 0.5f, carPosition));
@@ -463,11 +467,9 @@ int main() {
                 model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
                 float scale = 1.0f;
                 model = glm::scale(model, glm::vec3(scale));
-
                 ourShader.setMat4("model", model);
                 ourModel.Draw(ourShader);
             }
-
             if (showFlow && !pauseSimulation) {
                 // Update flow lines, passing car position for relative flow calculation
                 flowLinesVis.update(deltaTime);
@@ -477,6 +479,9 @@ int main() {
                 // If paused, just draw without updating
                 flowLinesVis.draw(lineShader, view, projection);
             }
+
+            // INSERT HERE: Draw reference marker through the flowLinesVis object
+            flowLinesVis.drawReferenceMarker(lineShader, view, projection);
 
             glfwSwapBuffers(window);
             glfwPollEvents();

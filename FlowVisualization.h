@@ -1,5 +1,4 @@
-﻿#ifndef FLOW_VISUALIZATION_H
-#define FLOW_VISUALIZATION_H
+﻿#define FLOW_VISUALIZATION_H
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -39,15 +38,15 @@ public:
         m_carHeight = carHeight;
         m_pointsPerLine = 80;        // Number of points per flow line
         m_totalPoints = m_numLines * m_pointsPerLine;
-        m_minDistance = 0.20f;       // Minimum distance between streamlines
+        m_minDistance = 0.05f;       // Minimum distance between streamlines
         m_adaptiveDensity = true;    // Enable adaptive density
-        m_carPosition = 0.0f;        // Current car Z position
+        m_carPosition = -50.0f;        // Current car Z position
         m_prevCarPosition = 0.0f;    // Previous car Z position
-        m_carSpeed = 250.0f;         // Car speed in km/h
+        m_carSpeed = 400.0f;         // Car speed in km/h
         m_simulateDRS = false;       // DRS state
         m_relativeDynamics = true;   // Enable relative dynamics (flow moves with car)
         m_visualizePressure = true;  // Show pressure differences in color 
-        m_vortexIntensity = 1.0f;    // Vortex visualization intensity
+        m_vortexIntensity = 2.0f;    // Vortex visualization intensity
 
         // Initialize flow line segments
         initFlowLines();
@@ -161,6 +160,68 @@ public:
         }
 
         glDisable(GL_LINE_SMOOTH);
+        glBindVertexArray(0);
+    }
+
+    void drawReferenceMarker(Shader& shader, const glm::mat4& view, const glm::mat4& projection) {
+        // Initialize buffers if not already done
+        static GLuint refVAO = 0, refVBO = 0, refColorVBO = 0;
+
+        if (refVAO == 0) {
+            // Create geometry and colors
+            std::vector<glm::vec3> referencePoints;
+            std::vector<glm::vec3> referenceColors;
+
+            // Vertical pole
+            referencePoints.push_back(glm::vec3(0.0f, 0.0f, -m_carLength * 1.0f));
+            referencePoints.push_back(glm::vec3(0.0f, 3.0f, -m_carLength * 1.0f));
+            referenceColors.push_back(glm::vec3(0.0f, 0.0f, 0.0f)); // Black
+            referenceColors.push_back(glm::vec3(0.0f, 0.0f, 0.0f)); // Black
+
+            // Horizontal line
+            referencePoints.push_back(glm::vec3(-2.5f, 0.05f, -m_carLength * 1.0f));
+            referencePoints.push_back(glm::vec3(2.5f, 0.05f, -m_carLength * 1.0f));
+            referenceColors.push_back(glm::vec3(1.0f, 0.0f, 0.0f)); // Red
+            referenceColors.push_back(glm::vec3(1.0f, 0.0f, 0.0f)); // Red
+
+            // Create buffers
+            glGenVertexArrays(1, &refVAO);
+            glGenBuffers(1, &refVBO);
+            glGenBuffers(1, &refColorVBO);
+
+            glBindVertexArray(refVAO);
+
+            // Position buffer
+            glBindBuffer(GL_ARRAY_BUFFER, refVBO);
+            glBufferData(GL_ARRAY_BUFFER, referencePoints.size() * sizeof(glm::vec3), referencePoints.data(), GL_STATIC_DRAW);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+            glEnableVertexAttribArray(0);
+
+            // Color buffer
+            glBindBuffer(GL_ARRAY_BUFFER, refColorVBO);
+            glBufferData(GL_ARRAY_BUFFER, referenceColors.size() * sizeof(glm::vec3), referenceColors.data(), GL_STATIC_DRAW);
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+            glEnableVertexAttribArray(1);
+
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindVertexArray(0);
+        }
+
+        // Draw reference marker
+        shader.use();
+        shader.setMat4("projection", projection);
+        shader.setMat4("view", view);
+        shader.setMat4("model", glm::mat4(1.0f));
+
+        glBindVertexArray(refVAO);
+        glLineWidth(3.0f);
+
+        // Draw pole
+        glDrawArrays(GL_LINES, 0, 2);
+
+        // Draw horizontal line
+        glDrawArrays(GL_LINES, 2, 2);
+
         glBindVertexArray(0);
     }
 
@@ -949,4 +1010,4 @@ private:
     float m_vortexIntensity;
 };
 
-#endif // FLOW_VISUALIZATION_H
+// FLOW_VISUALIZATIO
